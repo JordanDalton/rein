@@ -74,6 +74,12 @@ Each is pinned to the most restrictive mode it offers (`codex --sandbox
 read-only`, `grok --max-turns 1 --disable-web-search`, and a replaced system
 prompt for `claude`). The planner's job is to emit JSON, not to go exploring.
 
+The `claude` backend holds one streaming session open for the whole run
+instead of spawning a process per step, skips your configured MCP servers,
+disables extended thinking, and defaults to Haiku — picking the next argv
+from help text does not need an Opus-class model, and Haiku answers in a
+fraction of the time. Pass `--model sonnet` (or `opus`) for gnarlier tools.
+
 **Hosted and local APIs** share one OpenAI-compatible chat-completions
 implementation, so a preset is just a base URL plus a credential variable:
 
@@ -110,8 +116,9 @@ API, say) is one file implementing `Complete` and `Name`, plus a case in
 `makeBackend`.
 
 **On local models.** The capability digest is up to 24KB (~6k tokens) and is
-resent every step, so a small-context model will struggle and prompt processing
-dominates the wall clock on CPU — raise `REIN_PLANNER_TIMEOUT` (default 5m)
+part of every request (as a stable system-prompt prefix, so servers with
+prefix caching reprocess it only once), so a small-context model will
+struggle and prompt processing dominates the wall clock on CPU — raise `REIN_PLANNER_TIMEOUT` (default 5m)
 if a model needs longer. Quality degrades in a specific way: smaller models
 drift out of the plan schema. `ParsePlan` rejects a malformed plan and quotes
 what came back rather than guessing, so the failure is loud. In testing,

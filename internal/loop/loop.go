@@ -67,6 +67,7 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 	digest := cfg.Spec.Digest(24000)
 	logDir := filepath.Join(spec.Home(), "runs", time.Now().Format("20060102-150405"))
 
+	sess := planner.NewSession(cfg.Backend, cfg.Spec.Tool, digest, cfg.Intent)
 	var steps []planner.Step
 
 	for i := 1; i <= cfg.MaxSteps; i++ {
@@ -79,7 +80,7 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 			fmt.Fprintf(cfg.Out, "\n\033[2m── step %d · thinking…\033[0m\n", i)
 		}
 
-		plan, err := planner.Next(ctx, cfg.Backend, cfg.Spec.Tool, digest, cfg.Intent, steps)
+		plan, err := sess.Next(ctx, steps)
 		if err != nil {
 			return "", fmt.Errorf("step %d: %w", i, err)
 		}

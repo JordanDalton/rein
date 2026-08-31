@@ -9,8 +9,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
+
+// probeConcurrency is how many help probes run at once during discovery.
+const probeConcurrency = 8
 
 // Options tunes the discovery crawl. Zero values get sane defaults.
 type Options struct {
@@ -98,38 +102,65 @@ func Discover(ctx context.Context, tool string, opts Options) (*Spec, error) {
 		queue = append(queue, queued{path: []string{e.name}, summary: e.summary, depth: 1})
 	}
 
+	// Probes are independent subprocess runs, almost entirely wait time, so
+	// they go out in concurrent waves. Results are folded back in queue order,
+	// which keeps the crawl deterministic and the MaxCommands cap meaningful.
+	type probed struct {
+		help     string
+		err      error
+		children []entry
+	}
 	seen := map[string]bool{}
 	for len(queue) > 0 && len(s.Commands) < opts.MaxCommands {
-		q := queue[0]
-		queue = queue[1:]
-		key := strings.Join(q.path, " ")
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		if opts.Verbose {
-			fmt.Fprintf(os.Stderr, "  probing %s %s\n", tool, key)
-		}
-		help, err := helpFor(ctx, bin, q.path, opts)
-		if err != nil {
-			// A subcommand with no help is still worth recording by name.
-			s.Commands = append(s.Commands, Command{Path: q.path, Summary: q.summary})
-			continue
-		}
-		s.Commands = append(s.Commands, Command{
-			Path:    q.path,
-			Summary: q.summary,
-			Flags:   parseFlags(help),
-			Help:    help,
-		})
-
-		if q.depth < opts.MaxDepth {
-			children := cobraComplete(ctx, bin, q.path, opts)
-			if len(children) == 0 {
-				children = parseSubcommands(help)
+		var wave []queued
+		for len(wave) < probeConcurrency && len(queue) > 0 &&
+			len(s.Commands)+len(wave) < opts.MaxCommands {
+			q := queue[0]
+			queue = queue[1:]
+			key := strings.Join(q.path, " ")
+			if seen[key] {
+				continue
 			}
-			for _, c := range children {
+			seen[key] = true
+			if opts.Verbose {
+				fmt.Fprintf(os.Stderr, "  probing %s %s\n", tool, key)
+			}
+			wave = append(wave, q)
+		}
+
+		results := make([]probed, len(wave))
+		var wg sync.WaitGroup
+		for i, q := range wave {
+			wg.Add(1)
+			go func(i int, q queued) {
+				defer wg.Done()
+				r := probed{}
+				r.help, r.err = helpFor(ctx, bin, q.path, opts)
+				if r.err == nil && q.depth < opts.MaxDepth {
+					r.children = cobraComplete(ctx, bin, q.path, opts)
+					if len(r.children) == 0 {
+						r.children = parseSubcommands(r.help)
+					}
+				}
+				results[i] = r
+			}(i, q)
+		}
+		wg.Wait()
+
+		for i, q := range wave {
+			r := results[i]
+			if r.err != nil {
+				// A subcommand with no help is still worth recording by name.
+				s.Commands = append(s.Commands, Command{Path: q.path, Summary: q.summary})
+				continue
+			}
+			s.Commands = append(s.Commands, Command{
+				Path:    q.path,
+				Summary: q.summary,
+				Flags:   parseFlags(r.help),
+				Help:    r.help,
+			})
+			for _, c := range r.children {
 				queue = append(queue, queued{
 					path:    append(append([]string{}, q.path...), c.name),
 					summary: c.summary,

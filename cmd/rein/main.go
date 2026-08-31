@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -183,6 +184,10 @@ func cmdRun(ctx context.Context, args []string) error {
 	be, err := makeBackend(*backend, *model, *baseURL, *keyEnv)
 	if err != nil {
 		return err
+	}
+	// Session-holding backends keep a child process alive between steps.
+	if closer, ok := be.(io.Closer); ok {
+		defer closer.Close()
 	}
 
 	approval := loop.ApproveSafe

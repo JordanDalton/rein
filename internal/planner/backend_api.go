@@ -10,8 +10,11 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-// DefaultModel is used when no model is configured.
-const DefaultModel = "claude-opus-5"
+// DefaultModel is used when no model is configured. Choosing the next argv
+// from help text and emitting a small JSON plan is comfortably within Haiku's
+// ability, and it answers several times faster than the Opus-class models;
+// pass --model to trade latency for depth on gnarlier tools.
+const DefaultModel = "claude-haiku-4-5-20251001"
 
 // API talks to the Claude Messages API directly. Use it when rein ins
 // somewhere without the Claude Code CLI installed.
