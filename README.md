@@ -1,0 +1,249 @@
+# rein
+
+Wrap any CLI in an agentic loop. You type intent; rein figures out the
+flags, runs the command, reads the output, and iterates.
+
+```
+$ rein in git "what changed in the last two commits, and who wrote them?"
+
+── step 1/8 · thinking…
+  $ git log -2 --stat '--pretty=format:%H%n%an <%ae>%n%ad%n%s%n%b'
+  Show the last two commits with author, date, message, and changed-file stats · read-only
+  exit 0 in 47ms
+  │ c483a21… T <t@t> · tweak alpha
+  │  a.txt | 2 +-
+  …
+
+Both commits were written by T <t@t>. c483a21 "tweak alpha" rewrote one line
+in a.txt; 50fc6fa "add beta module" added a one-line b.txt.
+```
+
+This is the CLI-first prototype: no TUI yet, deliberately. If the loop doesn't
+feel right in a plain terminal, a TUI won't save it.
+
+## Install
+
+You need Go 1.27+ and a model to plan with. By default the planner shells out
+to your existing `claude` CLI, so if you already use Claude Code there is
+nothing else to configure; otherwise pick a backend below.
+
+```bash
+go install github.com/jordandalton/rein/cmd/rein@latest
+```
+
+That puts `rein` in `$(go env GOPATH)/bin` — usually `~/go/bin` — so make
+sure that directory is on your `PATH`:
+
+```bash
+export PATH="$HOME/go/bin:$PATH"     # add to ~/.zshrc or ~/.bashrc
+```
+
+To hack on it instead, clone the repo and build into `bin/`, then symlink so
+every rebuild is picked up without reinstalling:
+
+```bash
+git clone https://github.com/jordandalton/rein && cd rein
+go build -o bin/rein ./cmd/rein
+ln -s "$PWD/bin/rein" /usr/local/bin/rein
+```
+
+Check it worked:
+
+```bash
+rein in git "what changed in the last commit?"
+```
+
+The first run against any tool takes a few seconds while rein learns it (see
+[The idea](#the-idea)); everything after that is instant.
+
+## Model backends
+
+The planner needs nothing but text in and text out — no tool-calling, no
+provider-specific structured-output API — so any instruction-following model
+works. `internal/planner.Backend` is a two-method interface.
+
+**Agent CLIs** reuse credentials you already have, so there is no key to set:
+
+```bash
+rein in --backend claude-cli git "..."   # default
+rein in --backend codex-cli  git "..."
+rein in --backend grok-cli   git "..."
+```
+
+Each is pinned to the most restrictive mode it offers (`codex --sandbox
+read-only`, `grok --max-turns 1 --disable-web-search`, and a replaced system
+prompt for `claude`). The planner's job is to emit JSON, not to go exploring.
+
+**Hosted and local APIs** share one OpenAI-compatible chat-completions
+implementation, so a preset is just a base URL plus a credential variable:
+
+| `--backend` | endpoint | credential |
+|---|---|---|
+| `openai` | `api.openai.com/v1` | `OPENAI_API_KEY` |
+| `openrouter` | `openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| `xai` | `api.x.ai/v1` | `XAI_API_KEY` |
+| `groq` | `api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `deepseek` | `api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
+| `mistral` | `api.mistral.ai/v1` | `MISTRAL_API_KEY` |
+| `together` | `api.together.xyz/v1` | `TOGETHER_API_KEY` |
+| `ollama` | `localhost:11434/v1` | none |
+| `lmstudio` | `localhost:1234/v1` | none |
+| `openai-compatible` | `--base-url` | `REIN_API_KEY` |
+| `api` | Claude Messages API | `ANTHROPIC_API_KEY` / `ant auth login` |
+
+```bash
+rein in --backend openrouter --model x-ai/grok-4.6 git "..."
+rein in --backend ollama --model llama3.2 git "..."
+rein in --backend openai-compatible --base-url https://internal.corp/v1 \
+            --api-key-env CORP_TOKEN --model our-model git "..."
+```
+
+`--model` is required for these: the right name depends on the endpoint, and
+guessing produces a confusing 404 from the provider instead of a clear message
+from here. Credentials resolve `--api-key-env` → `REIN_API_KEY` → the
+provider's conventional variable. JSON mode and `temperature: 0` are requested
+where supported, and endpoints that reject either are retried once without
+them, so reasoning models and stricter gateways work with no extra flags.
+
+**Adding a provider** that does not speak this wire format (Gemini's native
+API, say) is one file implementing `Complete` and `Name`, plus a case in
+`makeBackend`.
+
+**On local models.** The capability digest is up to 24KB (~6k tokens) and is
+resent every step, so a small-context model will struggle and prompt processing
+dominates the wall clock on CPU — raise `REIN_PLANNER_TIMEOUT` (default 5m)
+if a model needs longer. Quality degrades in a specific way: smaller models
+drift out of the plan schema. `ParsePlan` rejects a malformed plan and quotes
+what came back rather than guessing, so the failure is loud. In testing,
+`llama3.2` returned valid JSON that was not a plan, and `gemma4` proposed
+running `grep` and a hallucinated `file_system_tool` — both were caught, the
+latter by the argv[0] guard.
+
+## Use
+
+```bash
+rein spec kubectl                  # learn the tool once, cache the result
+rein in kubectl "which pods are crashlooping in staging?"
+rein in gh "how many open PRs are assigned to me?"
+rein list                          # what has been learned so far
+```
+
+`rein in` discovers the tool automatically on first use, so `rein spec`
+is only needed to pre-warm the cache or re-learn after an upgrade
+(`rein in --refresh`).
+
+Rein's own flags work before or after the intent. Any *other* dashed word
+stays inside the intent, so you can ask about the wrapped tool's flags without
+them being parsed away:
+
+```bash
+rein in --auto gh "sync my forks"
+rein in gh "sync my forks" --auto            # identical
+rein in gh "which commands support --json?"  # --json stays in the intent
+rein in gh -- "what does --auto do?"         # "--" ends flag parsing
+```
+
+## The idea
+
+The interesting part isn't the loop — it's the **capability map**.
+
+A model has never seen your company's internal `acme-deploy` binary. So before
+planning anything, rein teaches itself the tool: it crawls `--help`
+recursively, and for Cobra-based CLIs it asks the binary directly via its
+hidden `__complete` endpoint, which is machine-readable and beats parsing
+prose. The result is cached in `~/.rein/specs/<tool>.json`, keyed to the
+tool version. Discovery costs a few seconds, once. Every run after that is
+free.
+
+That cached map is what makes a *per-CLI* wrapper different from a general
+coding agent: a small, durable, shareable description of one tool, including
+the ones no model has ever heard of.
+
+## Design notes
+
+**No shell, ever.** The planner emits an argv array and rein `exec`s it
+directly. There are no pipes, no globs, no `$VARS`, no `&&`. Quoting bugs
+therefore cannot become command injection, and `argv[0]` is checked against the
+wrapped tool on every step — a plan naming any other binary is rejected and fed
+back to the planner as a failed step.
+
+**Two independent risk opinions.** The model labels each command
+`safe` / `caution` / `danger`, and a static classifier
+(`internal/risk`) does the same from the argv alone. The gate takes the
+**higher** of the two, so a model that under-reports risk cannot talk its way
+past the prompt. Unknown commands classify as `caution`, never `safe`. The
+binary name is part of the verb path — wrapping `rm` means every invocation is
+destructive, subcommand or not.
+
+| mode | read-only | mutating | destructive |
+|---|---|---|---|
+| default | runs | asks | asks |
+| `--yes` | runs | runs | asks |
+| `--auto` | runs | runs | runs |
+
+Destructive commands stop for a human under `--yes`, and with no terminal
+available the loop fails closed rather than assuming consent.
+
+**The gate explains itself.** A prompt is only a real check if the person
+reading it can tell what they are agreeing to — which is not the same as being
+able to read the command. So every mutating or destructive plan carries a
+plain-language `consequence`, rendered above the prompt:
+
+```
+  $ git reset --hard 'HEAD~1'
+  Discard the most recent commit (c483a21 "tweak alpha") · destructive
+
+  !!  The most recent saved snapshot of your work, "tweak alpha", and every
+      edit it contained will be erased from your project, leaving it as it was
+      at "add beta module". Any uncommitted edits sitting in your files right
+      now will also be wiped out. This cannot be undone.
+
+  run this? [y]es / [n]o / [q]uit:
+```
+
+That warning names a consequence the command text does not: `--hard` also
+discards uncommitted work, which you only know if you already know git. Read-only
+commands get no warning, so the ones that appear still mean something, and a plan
+that omits the field still runs — losing the command would be worse than losing
+the warning.
+
+**CLIs are hostile to programs.** The runner forces `TERM=dumb`, `NO_COLOR`,
+`PAGER=cat` and friends, strips ANSI escapes, and closes stdin so a tool that
+decides to prompt fails fast instead of hanging. Long output is elided
+head-and-tail — the head carries the column headers, the tail carries the
+errors and totals, and the middle is rarely what you needed. The full,
+untruncated output is archived under `~/.rein/runs/` for grepping.
+
+**Prompt caching.** The system prompt and capability digest are byte-identical
+on every step, so the API backend marks them cacheable: a multi-step run costs
+one full-price request plus cheap reads.
+
+## Layout
+
+```
+cmd/rein           CLI entry point
+internal/spec      capability discovery + cache      (help crawl, __complete)
+internal/planner   model backends + plan schema      (claude CLI, Messages API)
+internal/risk      static argv risk classifier
+internal/runner    sanitised exec + output elision
+internal/loop      plan → gate → execute → observe
+```
+
+## Known limits
+
+- **Pipes only, no PTY.** Interactive tools (`psql`, `ssh`, anything curses)
+  are out of scope. Adding a PTY means writing a terminal emulator to read the
+  screen; worth doing only once the loop has proven itself.
+- **Help-text parsing is heuristic.** The Cobra `__complete` path is exact; the
+  prose parser handles Cobra, kubectl, and git shapes and will miss unusual
+  layouts. `rein spec <tool> --show` shows what was actually learned.
+- **The risk classifier is a gate, not an oracle.** It is deliberately
+  pessimistic, and it does not understand your tool's semantics. Don't run
+  `--auto` anywhere you'd mind losing.
+
+## Next
+
+- TUI (Bubbletea): transcript pane, live command pane, approval bar.
+- A spec registry — `rein pull acme-deploy` — so a team writes the map for
+  its internal tool once.
+- Model-authored spec refinement on first wrap, checked in alongside the crawl.
