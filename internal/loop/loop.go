@@ -70,7 +70,14 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 	var steps []planner.Step
 
 	for i := 1; i <= cfg.MaxSteps; i++ {
-		fmt.Fprintf(cfg.Out, "\n\033[2m── step %d/%d · thinking…\033[0m\n", i, cfg.MaxSteps)
+		// MaxSteps is a budget, not a plan — printing "1/8" reads as a promise
+		// of eight steps, so the cap only appears once it is nearly spent.
+		if cfg.MaxSteps-i < 2 {
+			fmt.Fprintf(cfg.Out, "\n\033[2m── step %d · %d step(s) left in budget · thinking…\033[0m\n",
+				i, cfg.MaxSteps-i+1)
+		} else {
+			fmt.Fprintf(cfg.Out, "\n\033[2m── step %d · thinking…\033[0m\n", i)
+		}
 
 		plan, err := planner.Next(ctx, cfg.Backend, cfg.Spec.Tool, digest, cfg.Intent, steps)
 		if err != nil {

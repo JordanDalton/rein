@@ -37,6 +37,7 @@ usage:
   rein <tool> <intent...>      the same; "in" is optional when <tool> is on PATH
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
+  rein completion <shell>      print tab-completion script (bash, zsh, fish)
 
 in flags:
   --steps N        max planning steps (default 8)
@@ -96,6 +97,8 @@ func run(args []string) error {
 		return cmdSpec(ctx, args[1:])
 	case "list":
 		return cmdList()
+	case "completion":
+		return cmdCompletion(args[1:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return nil
