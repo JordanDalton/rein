@@ -15,7 +15,7 @@ const bashCompletion = `# bash completion for rein — add to ~/.bashrc:
 _rein() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "in spec list help completion" -- "$cur")
+        COMPREPLY=( $(compgen -W "in spec list update version help completion" -- "$cur")
                     $(compgen -c -- "$cur") )
         return
     fi
@@ -35,7 +35,7 @@ const zshCompletion = `#compdef rein
 _rein() {
     if (( CURRENT == 2 )); then
         _alternative \
-            'verbs:rein command:(in spec list help completion)' \
+            'verbs:rein command:(in spec list update version help completion)' \
             'tools:tool:_command_names -e'
         return
     fi
@@ -56,7 +56,7 @@ fi
 const fishCompletion = `# fish completion for rein — save as ~/.config/fish/completions/rein.fish, or:
 #   rein completion fish | source
 complete -c rein -f
-complete -c rein -n "__fish_use_subcommand" -a "in spec list help completion" -d "rein command"
+complete -c rein -n "__fish_use_subcommand" -a "in spec list update version help completion" -d "rein command"
 complete -c rein -n "__fish_use_subcommand" -a "(__fish_complete_command)"
 complete -c rein -n "__fish_seen_subcommand_from in run spec; and test (count (commandline -opc)) -eq 2" -a "(__fish_complete_command)"
 complete -c rein -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"

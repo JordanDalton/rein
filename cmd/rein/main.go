@@ -38,6 +38,8 @@ usage:
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
   rein completion <shell>      print tab-completion script (bash, zsh, fish)
+  rein update                  self-update to the latest release (go install)
+  rein version                 print the installed version
 
 in flags:
   --steps N        max planning steps (default 8)
@@ -99,6 +101,10 @@ func run(args []string) error {
 		return cmdList()
 	case "completion":
 		return cmdCompletion(args[1:])
+	case "update":
+		return cmdUpdate(ctx)
+	case "version", "--version":
+		return cmdVersion()
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return nil
