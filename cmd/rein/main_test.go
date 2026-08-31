@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -63,5 +65,37 @@ func TestHoistFlagsEqualsForm(t *testing.T) {
 	got := hoistFlags([]string{"git", "do a thing", "--steps=4"}, runFlags, runValueFlags)
 	if want := "--steps=4|git|do a thing"; join(got) != want {
 		t.Errorf("got %q, want %q", join(got), want)
+	}
+}
+
+// `rein ffmpeg "..."` is shorthand for `rein in ffmpeg "..."`: the verb is
+// optional when the first positional word is an executable on PATH.
+func TestImpliedTool(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "fakeffmpeg"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	cases := []struct {
+		args []string
+		want string
+		ok   bool
+	}{
+		{[]string{"fakeffmpeg", "make a 3 second video"}, "fakeffmpeg", true},
+		{[]string{"--auto", "fakeffmpeg", "make a video"}, "fakeffmpeg", true},     // flag first
+		{[]string{"--steps", "3", "fakeffmpeg", "x"}, "fakeffmpeg", true},          // value flag first
+		{[]string{"--steps=3", "fakeffmpeg", "x"}, "fakeffmpeg", true},             // --flag=value
+		{[]string{"--", "fakeffmpeg", "what does --auto do?"}, "fakeffmpeg", true}, // terminator
+		{[]string{"nosuchtool", "do a thing"}, "", false},                          // not on PATH
+		{[]string{"--bogus", "fakeffmpeg", "x"}, "", false},                        // unknown flag: not ours
+		{[]string{"--auto"}, "", false},                                            // no positional at all
+		{[]string{}, "", false},
+	}
+	for _, c := range cases {
+		got, ok := impliedTool(c.args)
+		if got != c.want || ok != c.ok {
+			t.Errorf("impliedTool(%q) = %q,%v; want %q,%v", c.args, got, ok, c.want, c.ok)
+		}
 	}
 }

@@ -1,7 +1,7 @@
 // Command rein wraps an arbitrary CLI in an agentic loop.
 //
 //	rein spec kubectl              # learn the tool, cache the capability map
-//	rein in kubectl "which pods are crashlooping in staging?"
+//	rein kubectl "which pods are crashlooping in staging?"   # "in" is optional
 //
 // The design bet is that the hard part of wrapping a CLI is not the loop but
 // the capability map: discovery runs once per tool version and is reused on
@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -33,6 +34,7 @@ usage:
                                (rein flags may go before or after the
                                intent; other dashed words stay in it, and
                                "--" ends flag parsing entirely)
+  rein <tool> <intent...>      the same; "in" is optional when <tool> is on PATH
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
 
@@ -61,7 +63,7 @@ spec flags:
 examples:
   rein spec gh
   rein in gh "how many open PRs are assigned to me?"
-  rein in git "what changed in the last three commits?"
+  rein git "what changed in the last three commits?"
   rein in --backend ollama --model qwen2.5 git "summarise recent work"
   rein in --backend openai --base-url https://api.groq.com/openai/v1 \
           --model llama-3.3-70b-versatile gh "list my repos"
@@ -98,8 +100,46 @@ func run(args []string) error {
 		fmt.Print(usage)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try `rein help`)", args[0])
+		// `rein ffmpeg "..."` is `rein in ffmpeg "..."`: the verb is optional
+		// when the first positional word is a tool on PATH. Rein's own
+		// commands always win, so a tool that happens to be called `list`
+		// needs the explicit `rein in list "..."`.
+		if _, ok := impliedTool(args); ok {
+			return cmdRun(ctx, args)
+		}
+		return fmt.Errorf("unknown command %q: not a rein command, and no such tool on PATH (try `rein help`)", args[0])
 	}
+}
+
+// impliedTool finds the first positional word in args, skipping rein's own
+// `in` flags and their values, and reports it if it resolves to an executable.
+func impliedTool(args []string) (string, bool) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			if i+1 < len(args) {
+				if _, err := exec.LookPath(args[i+1]); err == nil {
+					return args[i+1], true
+				}
+			}
+			return "", false
+		}
+		if strings.HasPrefix(a, "-") && a != "-" {
+			name, _, hasEq := strings.Cut(strings.TrimLeft(a, "-"), "=")
+			if !runFlags[name] {
+				return "", false
+			}
+			if !hasEq && runValueFlags[name] {
+				i++
+			}
+			continue
+		}
+		if _, err := exec.LookPath(a); err != nil {
+			return "", false
+		}
+		return a, true
+	}
+	return "", false
 }
 
 func cmdRun(ctx context.Context, args []string) error {

@@ -182,6 +182,16 @@ rein in gh "how many open PRs are assigned to me?"
 rein list                          # what has been learned so far
 ```
 
+The `in` is optional whenever the next word is a tool on your PATH, so the
+short form works too:
+
+```bash
+rein ffmpeg "make a 3 second test video"
+```
+
+Rein's own commands (`spec`, `list`, `help`) always take precedence, so a
+tool that happens to share one of those names needs the explicit `rein in`.
+
 `rein in` discovers the tool automatically on first use, so `rein spec`
 is only needed to pre-warm the cache or re-learn after an upgrade
 (`rein in --refresh`).
