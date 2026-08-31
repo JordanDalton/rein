@@ -25,7 +25,7 @@ feel right in a plain terminal, a TUI won't save it.
 
 You need Go 1.27+ and a model to plan with. By default the planner shells out
 to your existing `claude` CLI, so if you already use Claude Code there is
-nothing else to configure; otherwise pick a backend below.
+nothing else to configure; otherwise see [Configuration](#configuration).
 
 ```bash
 go install github.com/jordandalton/rein/cmd/rein@latest
@@ -118,6 +118,60 @@ what came back rather than guessing, so the failure is loud. In testing,
 `llama3.2` returned valid JSON that was not a plan, and `gemma4` proposed
 running `grep` and a hallucinated `file_system_tool` — both were caught, the
 latter by the argv[0] guard.
+
+## Configuration
+
+There is no config file. Everything is a flag or an environment variable, and
+the defaults are chosen so that most people set nothing.
+
+**Using Claude Code already?** You're done — the default `claude-cli` backend
+reuses its login. The same goes for `codex-cli` and `grok-cli` if you have
+those tools signed in.
+
+**Using a hosted API?** Export the provider's usual key and name the backend
+and model:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...           # put in ~/.zshrc to make it stick
+rein in --backend openrouter --model anthropic/claude-sonnet-5 git "..."
+```
+
+Each preset reads the conventional variable from the table above
+(`OPENAI_API_KEY`, `GROQ_API_KEY`, …). To point *every* preset at one
+credential instead, set `REIN_API_KEY`; to read from some other variable —
+say your company's `CORP_TOKEN` — pass `--api-key-env CORP_TOKEN`.
+
+**Using the Claude Messages API directly?** `--backend api` looks for
+`ANTHROPIC_API_KEY`, then falls back to an `ant auth login` profile on disk.
+
+**Using a local model?** Nothing to export. Start Ollama or LM Studio and
+pass `--model`:
+
+```bash
+rein in --backend ollama --model qwen2.5 git "..."
+```
+
+**Using a self-hosted or unlisted OpenAI-compatible endpoint?** Give the URL
+and a key:
+
+```bash
+export REIN_BASE_URL=https://internal.corp/v1
+export REIN_API_KEY=...
+rein in --backend openai-compatible --model our-model git "..."
+```
+
+### Environment variables
+
+| variable | purpose | default |
+|---|---|---|
+| `REIN_API_KEY` | credential for any hosted backend; outranks the provider's own variable | unset |
+| `REIN_BASE_URL` | endpoint for `--backend openai-compatible` (same as `--base-url`) | unset |
+| `REIN_PLANNER_TIMEOUT` | how long to wait for the model each step, e.g. `15m` for slow local inference | `5m` |
+| `REIN_HOME` | where learned specs and run archives live | `~/.rein` |
+
+Flags always win over environment variables. Provider variables
+(`OPENAI_API_KEY` and friends) are only consulted when neither `--api-key-env`
+nor `REIN_API_KEY` is set.
 
 ## Use
 
