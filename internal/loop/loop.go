@@ -49,6 +49,20 @@ type Config struct {
 // ErrDenied is returned when the user stops the run at an approval prompt.
 var ErrDenied = errors.New("stopped by user")
 
+// ErrNoTerminal is wrapped by the error returned when a command needs a
+// human's approval and there is no one to ask. Headless callers (the MCP
+// server) match on it to explain the stop in their own terms.
+var ErrNoTerminal = errors.New("no terminal available to confirm")
+
+// NeedsInputError is returned when the planner asks the user a question and
+// the run has no way to relay it. The question is kept so a headless caller
+// can hand it back to whoever started the run.
+type NeedsInputError struct{ Question string }
+
+func (e *NeedsInputError) Error() string {
+	return "the planner needs an answer to continue: " + e.Question
+}
+
 type gate struct {
 	in  *bufio.Reader
 	out io.Writer
@@ -95,6 +109,9 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 		case planner.ActionAsk:
 			fmt.Fprintf(cfg.Out, "\n\033[1m?\033[0m %s\n", plan.Question)
 			ans, err := g.line("> ")
+			if errors.Is(err, ErrNoTerminal) {
+				return "", &NeedsInputError{Question: plan.Question}
+			}
 			if err != nil {
 				return "", err
 			}
@@ -223,7 +240,7 @@ func (g *gate) line(prompt string) (string, error) {
 	s, err := g.in.ReadString('\n')
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return "", errors.New("no terminal available to confirm; re-run interactively, or use --dry-run to preview (--auto skips every prompt, including destructive ones)")
+			return "", fmt.Errorf("%w; re-run interactively, or use --dry-run to preview (--auto skips every prompt, including destructive ones)", ErrNoTerminal)
 		}
 		return "", err
 	}

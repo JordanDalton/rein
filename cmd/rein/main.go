@@ -38,6 +38,8 @@ usage:
   rein <tool> <intent...>      the same; "in" is optional when <tool> is on PATH
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
+  rein mcp                     serve rein's tools over MCP on stdio, so an
+                               agent (Claude Code, Codex, …) can call it
   rein completion <shell>      print tab-completion script (bash, zsh, fish)
   rein update                  self-update to the latest release (go install)
   rein version                 print the installed version
@@ -58,6 +60,12 @@ in flags:
   --refresh        rediscover the capability map before running
   -v               show the planner's reasoning
 
+mcp flags:
+  --yes / --auto   the most a caller may be granted; a request for more is
+                   refused (default: read-only commands only)
+  --steps, --timeout, --backend, --model, --base-url, --api-key-env
+                   as for "in"; they apply to every call
+
 spec flags:
   --show           print the cached map instead of rediscovering
   --depth N        subcommand recursion depth (default 2)
@@ -71,6 +79,7 @@ examples:
   rein in --backend ollama --model qwen2.5 git "summarise recent work"
   rein in --backend openai --base-url https://api.groq.com/openai/v1 \
           --model llama-3.3-70b-versatile gh "list my repos"
+  claude mcp add rein -- rein mcp --yes
 `
 
 func main() {
@@ -100,6 +109,8 @@ func run(args []string) error {
 		return cmdSpec(ctx, args[1:])
 	case "list":
 		return cmdList()
+	case "mcp":
+		return cmdMCP(ctx, args[1:])
 	case "completion":
 		return cmdCompletion(args[1:])
 	case "update":
@@ -262,29 +273,50 @@ func cmdSpec(ctx context.Context, args []string) error {
 }
 
 func cmdList() error {
-	dir := filepath.Join(spec.Home(), "specs")
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) || len(entries) == 0 {
+	specs, err := cachedSpecs()
+	if err != nil {
+		return err
+	}
+	if len(specs) == 0 {
 		fmt.Println("no cached specs yet — try `rein spec git`")
 		return nil
 	}
+	for _, sp := range specs {
+		fmt.Println(describeSpec(sp))
+	}
+	return nil
+}
+
+// cachedSpecs loads every capability map in the cache, sorted by tool name.
+// Unreadable entries are skipped: one corrupt file should not hide the rest.
+func cachedSpecs() ([]*spec.Spec, error) {
+	dir := filepath.Join(spec.Home(), "specs")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var names []string
 	for _, e := range entries {
 		names = append(names, strings.TrimSuffix(e.Name(), ".json"))
 	}
 	sort.Strings(names)
+	var specs []*spec.Spec
 	for _, n := range names {
 		sp, err := spec.Load(n)
 		if err != nil || sp == nil {
 			continue
 		}
-		fmt.Printf("%-14s %3d commands  %s  %s\n", sp.Tool, len(sp.Commands),
-			sp.DiscoveredAt.Format("2006-01-02"), sp.Version)
+		specs = append(specs, sp)
 	}
-	return nil
+	return specs, nil
+}
+
+func describeSpec(sp *spec.Spec) string {
+	return fmt.Sprintf("%-14s %3d commands  %s  %s", sp.Tool, len(sp.Commands),
+		sp.DiscoveredAt.Format("2006-01-02"), sp.Version)
 }
 
 // ensureSpec loads the cached capability map, discovering one on first use.

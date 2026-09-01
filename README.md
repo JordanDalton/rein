@@ -214,6 +214,50 @@ rein in gh "which commands support --json?"  # --json stays in the intent
 rein in gh -- "what does --auto do?"         # "--" ends flag parsing
 ```
 
+## Use from an agent (MCP)
+
+Coding agents are bad at unfamiliar CLIs for exactly the reason rein exists.
+`rein mcp` serves rein over the Model Context Protocol on stdio, so an agent
+can hand a tool to rein instead of guessing at its flags:
+
+```bash
+claude mcp add rein -- rein mcp          # Claude Code
+codex mcp add rein -- rein mcp           # Codex
+```
+
+Any other client takes the same shape in its config file:
+
+```json
+{ "mcpServers": { "rein": { "command": "rein", "args": ["mcp"] } } }
+```
+
+Three tools are exposed. `rein_in` takes a `tool` and an `intent` and returns
+the answer plus a transcript of every command run. `rein_list` shows what has
+been learned. `rein_spec` shows a tool's subcommands, for "can this tool even
+do that?" questions.
+
+Runs are headless, so the approval gate cannot ask anyone. Instead the
+caller passes an `approval` level (`safe`, `yes`, `auto`, meaning the same as
+the flags) and the server enforces a ceiling set at startup:
+
+```bash
+rein mcp              # read-only commands only (default)
+rein mcp --yes        # callers may also be granted mutating commands
+rein mcp --auto       # callers may be granted anything; sandboxes only
+```
+
+A run that reaches a command above its granted level stops *before* running
+it and reports `status: needs-approval` with the transcript, so the calling
+agent can ask its user and retry with a higher level. A request above the
+server's ceiling is refused outright; the agent is told to ask the user
+rather than retry. A planner question comes back as `status: needs-input` for
+the same reason.
+
+The backend flags (`--backend`, `--model`, and friends) work on `rein mcp`
+too and apply to every call. With the default `claude-cli` backend inside
+Claude Code that means Claude Code calling rein calling `claude -p`, which is
+fine: the planner runs as a bare Haiku completion with no tools of its own.
+
 ## The idea
 
 The interesting part isn't the loop — it's the **capability map**.
@@ -317,4 +361,6 @@ internal/loop      plan → gate → execute → observe
 - TUI (Bubbletea): transcript pane, live command pane, approval bar.
 - A spec registry — `rein pull acme-deploy` — so a team writes the map for
   its internal tool once.
+- Learn from runs: keep the argv that satisfied an intent as an example for
+  the next time a similar one comes in.
 - Model-authored spec refinement on first wrap, checked in alongside the crawl.

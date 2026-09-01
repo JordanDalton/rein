@@ -3,6 +3,7 @@ package loop
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,5 +265,24 @@ func TestWrapTextBreaksOnSpaces(t *testing.T) {
 	}
 	if wrapText("   ", 10) != nil {
 		t.Error("blank text should wrap to nothing")
+	}
+}
+
+// With no terminal, a question from the planner is returned to the caller
+// rather than swallowed, and a gate stop is identifiable as such.
+func TestHeadlessRunReportsWhatItNeeds(t *testing.T) {
+	t.Setenv("REIN_HOME", t.TempDir())
+
+	be := &fakeBackend{replies: []string{`{"action":"ask","question":"which remote?"}`}}
+	_, err := Run(context.Background(), newConfig(t, "git", be, ""))
+	var needs *NeedsInputError
+	if !errors.As(err, &needs) || needs.Question != "which remote?" {
+		t.Errorf("expected NeedsInputError carrying the question, got %v", err)
+	}
+
+	be = &fakeBackend{replies: []string{`{"action":"run","argv":["git","push"],"risk":"caution"}`}}
+	_, err = Run(context.Background(), newConfig(t, "git", be, ""))
+	if !errors.Is(err, ErrNoTerminal) {
+		t.Errorf("expected ErrNoTerminal at the gate, got %v", err)
 	}
 }
