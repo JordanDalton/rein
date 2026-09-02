@@ -38,6 +38,11 @@ func (o *Options) withDefaults() {
 
 var (
 	ansiRe = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]")
+	// nroff renders bold as "x\bx" and underline as "_\bx". Anything that
+	// shells out to man (git, and most tools with real manuals) emits these.
+	overstrikeRe = regexp.MustCompile(".\x08")
+	// The "NAME(1)   Title   NAME(1)" banner man prints on its first line.
+	manHeaderRe = regexp.MustCompile(`^\S+\(\d\w*\)\s.*\(\d\w*\)\s*$`)
 	// A section header that introduces a list of subcommands. Matches Cobra
 	// ("Available Commands:"), kubectl ("Basic Commands (Beginner):"), git
 	// ("These are common Git commands..."), and most hand-rolled help text.
@@ -49,15 +54,21 @@ var (
 	otherHeaderRe = regexp.MustCompile(`(?i)^(usage|synopsis|options?|flags|global flags|inherited flags|examples?|environment|arguments|description|notes?|aliases|see also|learn more)\b`)
 	// An indented "name  description" entry under such a header.
 	cmdEntryRe = regexp.MustCompile(`^[ \t]+([a-z][a-zA-Z0-9:._-]*)(?:[ \t]{2,}(.*))?$`)
-	flagRe     = regexp.MustCompile(`(--[a-zA-Z0-9][a-zA-Z0-9-]*)`)
+	// git's short usage writes negatable flags as "--[no-]dry-run".
+	flagRe = regexp.MustCompile(`(--(?:\[no-\])?[a-zA-Z0-9][a-zA-Z0-9-]*)`)
 )
 
-// StripANSI removes escape sequences so help text and command output stay
-// legible to the model (and cheap in tokens).
+// StripANSI removes escape sequences and overstrikes so help text and
+// command output stay legible to the model (and cheap in tokens).
 func StripANSI(s string) string {
 	s = ansiRe.ReplaceAllString(s, "")
+	s = overstrikeRe.ReplaceAllString(s, "")
 	return strings.ReplaceAll(s, "\r", "")
 }
+
+// maxStoredHelp caps the help text kept per command. Digest only ever shows
+// the model the first ~1KB, so a 150KB man page is dead weight on disk.
+const maxStoredHelp = 16 << 10
 
 // Discover builds a capability map by crawling the tool's own help output.
 func Discover(ctx context.Context, tool string, opts Options) (*Spec, error) {
@@ -158,7 +169,7 @@ func Discover(ctx context.Context, tool string, opts Options) (*Spec, error) {
 				Path:    q.path,
 				Summary: q.summary,
 				Flags:   parseFlags(r.help),
-				Help:    r.help,
+				Help:    clip(r.help, maxStoredHelp),
 			})
 			for _, c := range r.children {
 				queue = append(queue, queued{
@@ -195,18 +206,37 @@ func run(ctx context.Context, bin string, args []string, opts Options) (string, 
 	return StripANSI(buf.String()), err
 }
 
-// helpFor tries the usual help incantations in order of prevalence.
+// helpFor tries the usual help incantations in order of prevalence. A probe
+// that answers with a full man page (git does this for --help) is kept only
+// as a fallback: the one-screen usage from -h names the same flags in a
+// fraction of the bytes and is what the digest budget can actually fit.
 func helpFor(ctx context.Context, bin string, path []string, opts Options) (string, error) {
+	var manPage string
 	for _, probe := range [][]string{{"--help"}, {"-h"}, {"help"}} {
 		args := append(append([]string{}, path...), probe...)
 		out, _ := run(ctx, bin, args, opts)
 		// Exit status is unreliable here: plenty of tools exit non-zero after
 		// printing perfectly good usage. Judge by the output instead.
-		if looksLikeHelp(out) {
-			return strings.TrimSpace(out), nil
+		if !looksLikeHelp(out) {
+			continue
 		}
+		out = strings.TrimSpace(out)
+		if looksLikeManPage(out) {
+			if manPage == "" {
+				manPage = out
+			}
+			continue
+		}
+		return out, nil
+	}
+	if manPage != "" {
+		return manPage, nil
 	}
 	return "", fmt.Errorf("no help output")
+}
+
+func looksLikeManPage(s string) bool {
+	return manHeaderRe.MatchString(firstLine(strings.TrimLeft(s, "\n")))
 }
 
 func looksLikeHelp(s string) bool {
@@ -327,11 +357,19 @@ func isCommandName(s string) bool {
 func parseFlags(help string) []string {
 	seen := map[string]bool{}
 	var res []string
-	for _, m := range flagRe.FindAllStringSubmatch(help, -1) {
-		if !seen[m[1]] {
-			seen[m[1]] = true
-			res = append(res, m[1])
+	add := func(f string) {
+		if !seen[f] {
+			seen[f] = true
+			res = append(res, f)
 		}
+	}
+	for _, m := range flagRe.FindAllStringSubmatch(help, -1) {
+		if bare, ok := strings.CutPrefix(m[1], "--[no-]"); ok {
+			add("--" + bare)
+			add("--no-" + bare)
+			continue
+		}
+		add(m[1])
 	}
 	if len(res) > 40 {
 		res = res[:40]

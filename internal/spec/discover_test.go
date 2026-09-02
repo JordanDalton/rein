@@ -1,6 +1,9 @@
 package spec
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const cobraHelp = `A tool for things.
 
@@ -76,6 +79,35 @@ func TestParseSubcommandsIgnoresFlagSections(t *testing.T) {
 func TestStripANSI(t *testing.T) {
 	if got := StripANSI("\x1b[1;31mbold red\x1b[0m\r\n"); got != "bold red\n" {
 		t.Errorf("got %q", got)
+	}
+	// nroff bold ("x\bx") and underline ("_\bx"), as man emits them.
+	if got := StripANSI("g\bgi\bit\bt a\bad\bdd\bd [-\b--\b-n\bn] _\b<_\bf_\bi_\bl_\be_\b>"); got != "git add [--n] <file>" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestParseFlagsSeesThroughOverstrikes(t *testing.T) {
+	help := StripANSI("       -\b-n\bn, -\b--\b-d\bdr\bry\by-\b-r\bru\bun\bn\n           Don't add the file(s).\n")
+	if got := parseFlags(help); len(got) != 1 || got[0] != "--dry-run" {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestParseFlagsExpandsNegatable(t *testing.T) {
+	got := parseFlags("    -n, --[no-]dry-run    dry run\n    -f, --force\n")
+	want := []string{"--dry-run", "--no-dry-run", "--force"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestLooksLikeManPage(t *testing.T) {
+	man := "GIT-ADD(1)                        Git Manual                        GIT-ADD(1)\n\nNAME\n       git-add - Add file contents to the index\n"
+	if !looksLikeManPage(man) {
+		t.Error("man page not recognised")
+	}
+	if looksLikeManPage("usage: git add [<options>] [--] <pathspec>...\n\n    -n, --dry-run   dry run\n") {
+		t.Error("plain usage mistaken for a man page")
 	}
 }
 
