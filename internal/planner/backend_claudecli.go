@@ -167,6 +167,13 @@ func (c *ClaudeCLI) start(system string) error {
 		// The planner needs a bare completion; skipping the user's configured
 		// MCP servers avoids spawning every server at startup.
 		"--strict-mcp-config",
+		// No built-in tools: their schemas are ~26k tokens on every request
+		// (36k cached tokens per step vs 10k without), measured at ~0.3-0.5s
+		// per step, and a planner with a Bash tool is a planner that might
+		// use it.
+		"--tools", "",
+		// Nothing to resume; skip writing the transcript to disk.
+		"--no-session-persistence",
 		"--model", c.model(),
 	}
 

@@ -75,10 +75,17 @@ read-only`, `grok --max-turns 1 --disable-web-search`, and a replaced system
 prompt for `claude`). The planner's job is to emit JSON, not to go exploring.
 
 The `claude` backend holds one streaming session open for the whole run
-instead of spawning a process per step, skips your configured MCP servers,
-disables extended thinking, and defaults to Haiku — picking the next argv
-from help text does not need an Opus-class model, and Haiku answers in a
-fraction of the time. Pass `--model sonnet` (or `opus`) for gnarlier tools.
+instead of spawning a process per step, skips your configured MCP servers
+and built-in tools, disables extended thinking, and defaults to Haiku —
+picking the next argv from help text does not need an Opus-class model, and
+Haiku answers in a fraction of the time. Pass `--model sonnet` (or `opus`)
+for gnarlier tools.
+
+Every one of those is a measured latency choice. A fresh `claude -p` process
+costs ~4s before it makes its first API call, which is why the session is
+persistent; the built-in tool schemas are ~26k tokens per request; and the
+planner is only asked to explain its reasoning under `-v`, which is the only
+time it is shown — dropping it saved ~0.7s per run.
 
 **Hosted and local APIs** share one OpenAI-compatible chat-completions
 implementation, so a preset is just a base URL plus a credential variable:

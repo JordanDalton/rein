@@ -82,6 +82,7 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 	logDir := filepath.Join(spec.Home(), "runs", time.Now().Format("20060102-150405"))
 
 	sess := planner.NewSession(cfg.Backend, cfg.Spec.Tool, digest, cfg.Intent)
+	sess.Reasoning = cfg.Verbose
 	var steps []planner.Step
 
 	for i := 1; i <= cfg.MaxSteps; i++ {

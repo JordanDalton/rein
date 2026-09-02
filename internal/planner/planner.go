@@ -56,12 +56,10 @@ type Step struct {
 	Note     string // for non-execution events: a user answer, a denied command
 }
 
-const systemPrompt = `You drive a single command-line tool on behalf of a user. You are given that tool's help text and the user's intent, and you choose one command at a time.
-
-Reply with a single JSON object and nothing else. No prose, no markdown fences.
-
-Schema:
-{
+// schemaFull asks the model to think out loud before deciding. schemaLean is
+// the same minus the reasoning field: fewer output tokens on every step.
+const (
+	schemaFull = `{
   "reasoning": "one or two sentences on why this is the next step",
   "action": "run" | "answer" | "ask",
   "argv": ["tool", "subcommand", "..."],   // required when action is "run"
@@ -70,7 +68,24 @@ Schema:
   "consequence": "plain-language warning; required when risk is caution or danger",
   "answer": "the final answer to the user",  // required when action is "answer"
   "question": "what you need from the user"  // required when action is "ask"
-}
+}`
+	schemaLean = `{
+  "action": "run" | "answer" | "ask",
+  "argv": ["tool", "subcommand", "..."],   // required when action is "run"
+  "risk": "safe" | "caution" | "danger",   // required when action is "run"
+  "purpose": "short human-readable description of what this command does",
+  "consequence": "plain-language warning; required when risk is caution or danger",
+  "answer": "the final answer to the user",  // required when action is "answer"
+  "question": "what you need from the user"  // required when action is "ask"
+}`
+)
+
+const systemPromptTmpl = `You drive a single command-line tool on behalf of a user. You are given that tool's help text and the user's intent, and you choose one command at a time.
+
+Reply with a single JSON object and nothing else. No prose, no markdown fences.
+
+Schema:
+@@SCHEMA@@
 
 Rules:
 - argv[0] MUST be the wrapped tool. You cannot run any other program.
@@ -96,16 +111,25 @@ Rules:
 - When you have enough to respond, use "answer" and answer the actual question.
   Cite the concrete values you saw; do not hedge or summarise vaguely.`
 
-// SystemPrompt returns the planner's system prompt.
-func SystemPrompt() string { return systemPrompt }
+// SystemPrompt returns the planner's instructions. With reasoning set the
+// schema asks for a short "reasoning" field before the decision; without it
+// the model goes straight to the plan, which measured ~0.7s faster per run
+// on Haiku. The loop only requests it when it is going to be shown (-v).
+func SystemPrompt(reasoning bool) string {
+	schema := schemaLean
+	if reasoning {
+		schema = schemaFull
+	}
+	return strings.Replace(systemPromptTmpl, "@@SCHEMA@@", schema, 1)
+}
 
 // BuildSystem renders the full system prompt: the instructions plus the tool's
 // capability digest. The digest lives here rather than in the user message
 // because it is byte-identical on every step of a run — backends that cache
 // the system prefix (the Claude API explicitly, most hosted endpoints
 // implicitly) then reprocess only the turn itself instead of the whole map.
-func BuildSystem(digest string) string {
-	return systemPrompt + "\n\n=== TOOL CAPABILITIES ===\n" + digest
+func BuildSystem(digest string, reasoning bool) string {
+	return SystemPrompt(reasoning) + "\n\n=== TOOL CAPABILITIES ===\n" + digest
 }
 
 // keepFullSteps is how many recent steps keep their command output untrimmed
@@ -185,6 +209,12 @@ type Session struct {
 	intent string
 	sent   int  // steps already delivered to a Sessional backend
 	opened bool // a Sessional conversation is live
+
+	// Reasoning asks the model to explain each step. Off by default: it is
+	// only worth the extra output tokens when the loop is going to show it.
+	// Set before the first Next; a Sessional backend fixes the system prompt
+	// when the conversation opens.
+	Reasoning bool
 }
 
 // NewSession binds a backend to one run's tool, capability digest, and intent.
@@ -194,7 +224,7 @@ func NewSession(b Backend, tool, digest, intent string) *Session {
 
 // Next asks the backend for one decision given the history so far.
 func (s *Session) Next(ctx context.Context, steps []Step) (*Plan, error) {
-	system := BuildSystem(s.digest)
+	system := BuildSystem(s.digest, s.Reasoning)
 
 	sb, ok := s.b.(Sessional)
 	if !ok {

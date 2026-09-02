@@ -77,11 +77,19 @@ func TestParsePlanCarriesConsequence(t *testing.T) {
 
 // The system prompt has to actually ask for the field, or nothing populates it.
 func TestSystemPromptRequestsConsequences(t *testing.T) {
-	sp := SystemPrompt()
-	for _, want := range []string{"consequence", "cannot be undone", "may not be able to read shell"} {
-		if !strings.Contains(sp, want) {
-			t.Errorf("system prompt is missing %q", want)
+	for _, reasoning := range []bool{false, true} {
+		sp := SystemPrompt(reasoning)
+		for _, want := range []string{"consequence", "cannot be undone", "may not be able to read shell"} {
+			if !strings.Contains(sp, want) {
+				t.Errorf("system prompt (reasoning=%v) is missing %q", reasoning, want)
+			}
 		}
+		if got := strings.Contains(sp, `"reasoning"`); got != reasoning {
+			t.Errorf("reasoning=%v but the schema mentions the field: %v", reasoning, got)
+		}
+	}
+	if strings.Contains(SystemPrompt(false), "@@") {
+		t.Error("schema placeholder was not substituted")
 	}
 }
 
@@ -191,7 +199,7 @@ func TestClipMiddleKeepsHeadAndTail(t *testing.T) {
 }
 
 func TestSystemCarriesDigest(t *testing.T) {
-	sys := BuildSystem("THE-DIGEST")
+	sys := BuildSystem("THE-DIGEST", false)
 	if !strings.Contains(sys, "THE-DIGEST") || !strings.Contains(sys, "TOOL CAPABILITIES") {
 		t.Errorf("BuildSystem should embed the digest: %q", sys)
 	}
