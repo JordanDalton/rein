@@ -76,6 +76,64 @@ var forceFlags = map[string]bool{
 	"--force-with-lease": true, "--purge": true,
 }
 
+// readFlags turn a command that would otherwise be unknown into a read-only
+// one: `git tag -l`, `git push --dry-run`. They never soften a write verb or
+// a force flag, which are checked first.
+var readFlags = map[string]bool{
+	"--list": true, "-l": true, "--dry-run": true, "--help": true, "-h": true,
+	"--version": true,
+}
+
+// secretFiles are base names that conventionally hold credentials. Reading
+// one is not destructive, but it discloses: whatever it prints reaches the
+// terminal, the model backend, and the run log. That is a decision for a
+// human, so any such operand lifts a read-only command to Caution. Write
+// verbs and force flags are checked first and still win.
+var secretFiles = []string{
+	".env", ".env.*", "*.env", ".envrc",
+	"*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore",
+	"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+	".netrc", "_netrc", ".npmrc", ".pypirc", ".pgpass", ".my.cnf", ".htpasswd",
+	".git-credentials", "credentials", "credentials.json",
+	"secrets.*", "*.secret", "*.secrets", "secrets",
+}
+
+// SecretOperand returns the first argument of argv that names a file which
+// usually holds credentials, or "" if there is none. Flag values are checked
+// too (--file=.env), flag names are not.
+func SecretOperand(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	for _, a := range argv[1:] {
+		v := a
+		if strings.HasPrefix(a, "-") {
+			_, val, ok := strings.Cut(a, "=")
+			if !ok {
+				continue
+			}
+			v = val
+		}
+		if isSecretFile(v) {
+			return v
+		}
+	}
+	return ""
+}
+
+func isSecretFile(path string) bool {
+	base := filepath.Base(filepath.Clean(path))
+	if base == "." || base == "/" {
+		return false
+	}
+	for _, pat := range secretFiles {
+		if ok, _ := filepath.Match(pat, base); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // verbPathDepth is how many leading bare tokens can form the subcommand path
 // ("git remote remove"). Beyond that, tokens are operands and must not
 // escalate the classification — a pod literally named "delete-me" is not a
@@ -117,7 +175,7 @@ func Classify(argv []string) Level {
 	// The binary itself can be the verb: `rm -rf x` has no subcommand, and
 	// wrapping `rm` means every invocation is destructive.
 	verbs := []string{filepath.Base(argv[0])}
-	sawF := false
+	sawF, sawReadFlag := false, false
 
 	for _, a := range argv[1:] {
 		if strings.HasPrefix(a, "-") {
@@ -130,6 +188,9 @@ func Classify(argv []string) Level {
 			}
 			if shortFlagHasF(a) {
 				sawF = true
+			}
+			if name, _, _ := strings.Cut(a, "="); readFlags[name] {
+				sawReadFlag = true
 			}
 			continue
 		}
@@ -151,12 +212,17 @@ func Classify(argv []string) Level {
 			sawReadVerb = true
 		}
 	}
-	if sawReadVerb {
+	if sawReadVerb || sawReadFlag {
 		level = Safe
 	}
 	if len(verbs) == 1 {
 		// Bare invocation, e.g. `kubectl` or `git`: prints usage, harmless.
 		return Safe
+	}
+	// Disclosure is its own axis: `cat .env` changes nothing, but it is not
+	// something to run unattended either.
+	if level == Safe && SecretOperand(argv) != "" {
+		level = Caution
 	}
 	return level
 }

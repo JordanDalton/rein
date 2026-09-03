@@ -143,8 +143,18 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 			fmt.Fprintf(cfg.Out, "  \033[2m%s\033[0m\n", badge(level))
 		}
 
-		if plan.Consequence != "" && level != risk.Safe {
-			fmt.Fprint(cfg.Out, consequenceBlock(level, plan.Consequence))
+		// A model that called `cat .env` "safe" wrote no consequence, so the
+		// gate would otherwise prompt with nothing to explain why.
+		consequence := plan.Consequence
+		if consequence == "" {
+			if f := risk.SecretOperand(plan.Argv); f != "" {
+				consequence = fmt.Sprintf("This reads %s, which usually holds credentials. "+
+					"Whatever it prints is shown here, sent to the model, and kept in rein's run log. "+
+					"Values that look like secrets are masked, but not everything sensitive looks like one.", f)
+			}
+		}
+		if consequence != "" && level != risk.Safe {
+			fmt.Fprint(cfg.Out, consequenceBlock(level, consequence))
 		}
 
 		if cfg.DryRun {
@@ -174,9 +184,17 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 			status = "timed out"
 		}
 		fmt.Fprintf(cfg.Out, "  \033[2m%s in %s%s\033[0m\n", status,
-			res.Duration.Round(time.Millisecond), elidedNote(res))
+			res.Duration.Round(time.Millisecond), outputNote(res))
 		if body := strings.TrimSpace(res.Stdout + "\n" + res.Stderr); body != "" {
-			fmt.Fprintln(cfg.Out, indent(body, "  │ "))
+			if f := risk.SecretOperand(plan.Argv); f != "" {
+				// The user asked a question about the file, not to see it.
+				// The model gets the masked contents; the terminal gets a
+				// summary, so a stray glance at the scrollback shows nothing.
+				fmt.Fprintf(cfg.Out, "  \033[2m│ contents of %s withheld from the terminal (%d line(s), %d secret(s) masked); the model sees the masked version, as does the run log\033[0m\n",
+					f, strings.Count(body, "\n")+1, res.Redacted)
+			} else {
+				fmt.Fprintln(cfg.Out, indent(body, "  │ "))
+			}
 		}
 
 		steps = append(steps, planner.Step{
@@ -311,14 +329,23 @@ func badge(l risk.Level) string {
 	}
 }
 
-func elidedNote(r *runner.Result) string {
-	if !r.Elided {
+// outputNote explains what was done to the output before it was shown.
+func outputNote(r *runner.Result) string {
+	var notes []string
+	if r.Redacted > 0 {
+		notes = append(notes, fmt.Sprintf("%d secret(s) masked", r.Redacted))
+	}
+	if r.Elided {
+		if r.LogPath != "" {
+			notes = append(notes, "output elided, full log at "+r.LogPath)
+		} else {
+			notes = append(notes, "output elided")
+		}
+	}
+	if len(notes) == 0 {
 		return ""
 	}
-	if r.LogPath != "" {
-		return " · output elided, full log at " + r.LogPath
-	}
-	return " · output elided"
+	return " · " + strings.Join(notes, " · ")
 }
 
 func indent(s, prefix string) string {

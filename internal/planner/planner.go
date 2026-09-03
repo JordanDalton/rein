@@ -108,6 +108,14 @@ Rules:
   If the tool cannot do what was asked, say so with action "answer".
 - Use "ask" only for information you genuinely cannot discover by running a
   read-only command first.
+- Reading a file that usually holds credentials (.env, keys, credentials
+  files) is "caution", not "safe": it discloses even though it changes
+  nothing. Values that look like secrets are masked in the output you see, as
+  a short prefix plus "[redacted, N chars]". That is deliberate; do not try to
+  recover the rest, and answer with what the masked form tells you.
+- A non-zero exit is not an answer. Read the stderr you were shown, fix the
+  command, and try again. Report a failure with "answer" only after a
+  genuinely different approach has also failed, and say what you tried.
 - When you have enough to respond, use "answer" and answer the actual question.
   Cite the concrete values you saw; do not hedge or summarise vaguely.`
 

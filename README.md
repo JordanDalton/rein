@@ -329,6 +329,24 @@ commands get no warning, so the ones that appear still mean something, and a pla
 that omits the field still runs — losing the command would be worse than losing
 the warning.
 
+**Reading a secret is not "safe".** Disclosure is its own axis. A read of a
+file that conventionally holds credentials — `.env` and its variants, `*.pem`,
+`*.key`, `id_rsa`, `.netrc`, `credentials`, and so on — classifies as
+`caution` even under a read-only verb, so `cat .env` stops for a human in the
+default mode with a warning that says where the contents will go. And whatever
+any command prints is scanned before anyone sees it: values under names like
+`TOKEN`, `PASSWORD`, `SECRET`, `API_KEY`, well-known token shapes (Slack,
+GitHub, AWS, OpenAI/Anthropic, JWTs, passwords in URLs) and PEM private keys
+are masked down to a short prefix and a length —
+`SLACK_TOKEN=xoxb…[redacted, 32 chars]` — in the transcript sent to the
+model and in the run log under `~/.rein/runs/`, which is written owner-only.
+The prefix is kept so "which token is this?" is still answerable. The terminal
+gets less still: when the command read a secret file, the contents are not
+echoed at all, only a one-line note of how many lines and masked values the
+model was shown. You asked a question about the file, not to see it.
+This is a heuristic: an unlabelled secret in free text gets through, and a
+harmless value under a suspicious name gets masked.
+
 **CLIs are hostile to programs.** The runner forces `TERM=dumb`, `NO_COLOR`,
 `PAGER=cat` and friends, strips ANSI escapes, and closes stdin so a tool that
 decides to prompt fails fast instead of hanging. Long output is elided
@@ -359,6 +377,9 @@ internal/loop      plan → gate → execute → observe
 - **Help-text parsing is heuristic.** The Cobra `__complete` path is exact; the
   prose parser handles Cobra, kubectl, and git shapes and will miss unusual
   layouts. `rein spec <tool> --show` shows what was actually learned.
+- **Redaction is pattern-based.** It catches labelled values and well-known
+  token shapes, not every secret. Treat the gate as the real protection and
+  the masking as a second layer.
 - **The risk classifier is a gate, not an oracle.** It is deliberately
   pessimistic, and it does not understand your tool's semantics. Don't run
   `--auto` anywhere you'd mind losing.

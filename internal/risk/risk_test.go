@@ -90,3 +90,65 @@ func TestShortForceFlag(t *testing.T) {
 		}
 	}
 }
+
+// A list or dry-run flag makes an otherwise unknown command read-only, but
+// never softens a write verb or a force flag.
+func TestReadFlags(t *testing.T) {
+	cases := []struct {
+		argv []string
+		want Level
+	}{
+		{[]string{"git", "tag", "-l"}, Safe},
+		{[]string{"git", "branch", "--list", "feat/*"}, Safe},
+		{[]string{"git", "push", "--dry-run"}, Safe},
+		{[]string{"kubectl", "apply", "--dry-run=client", "-f", "x.yaml"}, Safe},
+		{[]string{"git", "tag"}, Caution},
+		{[]string{"git", "tag", "-d", "v1"}, Caution},
+		{[]string{"git", "tag", "-l", "-f", "v1"}, Danger},                      // force still wins
+		{[]string{"kubectl", "delete", "pod", "x", "--dry-run=client"}, Danger}, // write verb still wins
+		{[]string{"rm", "--dry-run", "x"}, Danger},
+	}
+	for _, c := range cases {
+		if got := Classify(c.argv); got != c.want {
+			t.Errorf("Classify(%q) = %v, want %v", c.argv, got, c.want)
+		}
+	}
+}
+
+// Reading a file that conventionally holds credentials is not destructive,
+// but it is not something to run unattended: it lifts a read to Caution.
+func TestSecretFilesNeedAHuman(t *testing.T) {
+	cases := []struct {
+		argv []string
+		want Level
+	}{
+		{[]string{"cat", ".env"}, Caution},
+		{[]string{"cat", "./config/.env.production"}, Caution},
+		{[]string{"cat", "/Users/me/.aws/credentials"}, Caution},
+		{[]string{"cat", "id_rsa"}, Caution},
+		{[]string{"git", "show", "HEAD:.env"}, Caution},
+		{[]string{"kubectl", "create", "secret", "generic", "x", "--from-env-file=.env"}, Caution},
+		{[]string{"sops", "-d", "secrets.yaml"}, Caution},
+
+		// Public halves and ordinary files stay read-only.
+		{[]string{"cat", "id_rsa.pub"}, Safe},
+		{[]string{"cat", "README.md"}, Safe},
+		{[]string{"cat", ".env.example"}, Caution}, // matches .env.*; a human can wave it through
+		{[]string{"cat"}, Safe},
+
+		// Destruction still outranks disclosure.
+		{[]string{"rm", ".env"}, Danger},
+		{[]string{"git", "checkout", "-f", ".env"}, Danger},
+	}
+	for _, c := range cases {
+		if got := Classify(c.argv); got != c.want {
+			t.Errorf("Classify(%q) = %v, want %v", c.argv, got, c.want)
+		}
+	}
+	if got := SecretOperand([]string{"cat", "a.txt", "b/.env"}); got != "b/.env" {
+		t.Errorf("SecretOperand = %q, want b/.env", got)
+	}
+	if got := SecretOperand([]string{"cat", "--flag", "a.txt"}); got != "" {
+		t.Errorf("SecretOperand = %q, want empty", got)
+	}
+}

@@ -45,6 +45,7 @@ type Result struct {
 	Stdout   string // elided, ANSI-stripped
 	Stderr   string // elided, ANSI-stripped
 	Elided   bool
+	Redacted int // values that looked like credentials, masked before anyone saw them
 	TimedOut bool
 	Duration time.Duration
 	LogPath  string // full untruncated output, when LogDir was set
@@ -107,8 +108,12 @@ func Run(ctx context.Context, argv []string, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("could not run %q: %w", argv[0], err)
 	}
 
-	rawOut := spec.StripANSI(outBuf.String())
-	rawErr := spec.StripANSI(errBuf.String())
+	// Redaction runs before the archive as well as before the model: the
+	// run log is on disk for a long time and is the audience least likely
+	// to be thought about.
+	rawOut, nOut := Redact(spec.StripANSI(outBuf.String()))
+	rawErr, nErr := Redact(spec.StripANSI(errBuf.String()))
+	res.Redacted = nOut + nErr
 
 	if opts.LogDir != "" {
 		res.LogPath = archive(opts.LogDir, argv, rawOut, rawErr)
@@ -144,14 +149,16 @@ func elide(s string, maxLines int) (string, bool) {
 // archive writes the full output to disk so it stays available for grepping
 // after the elided version has been handed to the model.
 func archive(dir string, argv []string, stdout, stderr string) string {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// Owner-only: the archive holds whatever the tool printed, which even
+	// after redaction is more than the rest of the machine needs to see.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return ""
 	}
 	name := fmt.Sprintf("%s-%s.log", time.Now().Format("20060102-150405.000"), sanitize(argv))
 	p := filepath.Join(dir, name)
 	var b strings.Builder
 	fmt.Fprintf(&b, "$ %s\n\n--- stdout ---\n%s\n--- stderr ---\n%s\n", Quote(argv), stdout, stderr)
-	if os.WriteFile(p, []byte(b.String()), 0o644) != nil {
+	if os.WriteFile(p, []byte(b.String()), 0o600) != nil {
 		return ""
 	}
 	return p
