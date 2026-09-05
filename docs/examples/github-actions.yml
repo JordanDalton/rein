@@ -1,0 +1,33 @@
+name: Rein governed CI
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Configure protection rules on this GitHub environment.
+    environment: rein-ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+      # Replace BOTH placeholders with a reviewed published Rein commit.
+      - name: Install pinned Rein CLI
+        run: go install github.com/jordandalton/rein/cmd/rein@REIN_COMMIT_SHA
+      - uses: jordandalton/rein/actions/ci-auth@REIN_COMMIT_SHA
+        with:
+          control_url: https://reincontrol.com
+          workload_id: ${{ vars.REIN_WORKLOAD_ID }}
+          audience: rein
+      - name: Check workload and published policy
+        run: rein ci check
+      - name: Governed read-only operation
+        run: rein ci run --environment rein-ci -- git status

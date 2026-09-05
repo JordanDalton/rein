@@ -1,0 +1,20 @@
+name: Rein CI authentication
+description: Exchange GitHub OIDC for a short-lived Rein workload credential.
+inputs:
+  control_url:
+    description: Trusted HTTPS Rein Control origin
+    required: true
+    default: https://reincontrol.com
+  workload_id:
+    description: Workload ID configured in Rein Control
+    required: true
+  audience:
+    description: Exact audience configured on the workload
+    required: true
+    default: rein
+outputs:
+  expires-at:
+    description: Expiration of the issued workload credential (not a token)
+runs:
+  using: node24
+  main: index.mjs

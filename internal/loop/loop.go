@@ -44,6 +44,15 @@ type Config struct {
 	Verbose  bool
 	Out      io.Writer
 	In       io.Reader // approval input; defaults to /dev/tty, then stdin
+	// Policy receives the validated argv immediately before approval/execution.
+	// A non-nil error blocks the command without ever invoking the wrapped CLI.
+	Policy          func([]string, risk.Level) error
+	ApprovalCheck   func([]string) bool
+	RequireApproval func([]string, risk.Level) bool
+	// Authorize replaces the interactive gate for externally governed runs.
+	Authorize     func([]string, risk.Level) error
+	BeforeExecute func([]string) error
+	AfterExecute  func([]string, *runner.Result, error) error
 }
 
 // ErrDenied is returned when the user stops the run at an approval prompt.
@@ -135,6 +144,12 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 		// checks; trusting the higher of the two means a model that
 		// under-reports cannot talk its way past the gate.
 		level := risk.Max(risk.Classify(plan.Argv), risk.Parse(plan.Risk))
+		if cfg.Policy != nil {
+			if err := cfg.Policy(plan.Argv, level); err != nil {
+				fmt.Fprintf(cfg.Out, "\033[31m✗ blocked by policy:\033[0m %v\n", err)
+				return "", err
+			}
+		}
 
 		fmt.Fprintf(cfg.Out, "\n  \033[1m$ %s\033[0m\n", runner.Quote(plan.Argv))
 		if plan.Purpose != "" {
@@ -162,7 +177,17 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 			return fmt.Sprintf("Dry run: next command would be `%s`", runner.Quote(plan.Argv)), nil
 		}
 
-		ok, err := g.approve(cfg, level)
+		var ok bool
+		required := cfg.RequireApproval != nil && cfg.RequireApproval(plan.Argv, level)
+		if cfg.Authorize != nil {
+			err = cfg.Authorize(plan.Argv, level)
+			ok = err == nil
+		} else if cfg.ApprovalCheck != nil && cfg.ApprovalCheck(plan.Argv) {
+			fmt.Fprintln(cfg.Out, "  approved by Rein Cloud policy review")
+			ok = true
+		} else {
+			ok, err = g.approve(cfg, level, required)
+		}
 		if err != nil {
 			return "", err
 		}
@@ -174,7 +199,17 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 			continue
 		}
 
+		if cfg.BeforeExecute != nil {
+			if err := cfg.BeforeExecute(plan.Argv); err != nil {
+				return "", fmt.Errorf("pre-execution audit failed; command not executed: %w", err)
+			}
+		}
 		res, err := runner.Run(ctx, plan.Argv, runner.Options{Timeout: cfg.Timeout, LogDir: logDir})
+		if cfg.AfterExecute != nil {
+			if auditErr := cfg.AfterExecute(plan.Argv, res, err); auditErr != nil {
+				return "", fmt.Errorf("post-execution audit failed; command may have executed, do not blindly retry: %w", auditErr)
+			}
+		}
 		if err != nil {
 			return "", err
 		}
@@ -228,13 +263,13 @@ func validate(argv []string, s *spec.Spec) error {
 	return nil
 }
 
-func (g *gate) approve(cfg Config, level risk.Level) (bool, error) {
+func (g *gate) approve(cfg Config, level risk.Level, required bool) (bool, error) {
 	switch {
-	case cfg.Approval == ApproveAll:
+	case !required && cfg.Approval == ApproveAll:
 		return true, nil
-	case level == risk.Safe:
+	case !required && level == risk.Safe:
 		return true, nil
-	case level == risk.Caution && cfg.Approval >= ApproveCaution:
+	case !required && level == risk.Caution && cfg.Approval >= ApproveCaution:
 		return true, nil
 	}
 

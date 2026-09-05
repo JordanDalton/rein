@@ -38,6 +38,18 @@ usage:
   rein <tool> <intent...>      the same; "in" is optional when <tool> is on PATH
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
+  rein login                   connect this installation to Rein Cloud
+  rein logout                  revoke this device's Rein Cloud credential
+  rein status                  show this installation's Rein Cloud identity
+  rein team list                list local team profiles
+  rein team use NAME             switch the active team profile
+  rein sync                    download the latest organization policy bundle
+  rein approval list            list approval requests across agents
+  rein agent register NAME     register an explicit MCP caller (codex, claude-code)
+  rein agent list              list registered callers
+  rein agent revoke NAME       revoke a registered caller
+  rein configure [HOST]        preview harness launch or --persistent project setup
+  rein ci check|run            non-interactive workload authentication and CI execution
   rein mcp                     serve rein's tools over MCP on stdio, so an
                                agent (Claude Code, Codex, …) can call it
   rein completion <shell>      print tab-completion script (bash, zsh, fish)
@@ -109,6 +121,24 @@ func run(args []string) error {
 		return cmdSpec(ctx, args[1:])
 	case "list":
 		return cmdList()
+	case "login":
+		return cmdLogin(ctx, args[1:])
+	case "status":
+		return cmdStatus(ctx, args[1:])
+	case "team":
+		return cmdTeam(args[1:])
+	case "sync":
+		return cmdSync(ctx, args[1:])
+	case "approval":
+		return cmdApproval(ctx, args[1:])
+	case "logout":
+		return cmdLogout(ctx, args[1:])
+	case "agent":
+		return cmdAgent(ctx, args[1:])
+	case "configure":
+		return cmdConfigure(ctx, args[1:])
+	case "ci":
+		return cmdCI(ctx, args[1:])
 	case "mcp":
 		return cmdMCP(ctx, args[1:])
 	case "completion":

@@ -1,0 +1,25 @@
+name: Rein CI
+
+on:
+  push:
+    branches: [mvp, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Test
+        run: go test ./...
+      - name: Test GitHub authentication action
+        run: node --test actions/ci-auth/index.test.mjs
+      - name: Build
+        run: go build ./cmd/rein

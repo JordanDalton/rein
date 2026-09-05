@@ -15,6 +15,9 @@ import (
 	"github.com/jordandalton/rein/internal/loop"
 	"github.com/jordandalton/rein/internal/mcp"
 	"github.com/jordandalton/rein/internal/planner"
+	"github.com/jordandalton/rein/internal/policy"
+	"github.com/jordandalton/rein/internal/risk"
+	"github.com/jordandalton/rein/internal/runner"
 	"github.com/jordandalton/rein/internal/spec"
 )
 
@@ -36,11 +39,17 @@ func cmdMCP(ctx context.Context, args []string) error {
 	baseURL := fs.String("base-url", "", "")
 	keyEnv := fs.String("api-key-env", "", "")
 	timeout := fs.Duration("timeout", 60*time.Second, "")
+	agent := fs.String("agent", "", "")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
 		return errors.New("usage: rein mcp [--yes|--auto] [--backend NAME] [--model NAME]")
+	}
+	if *agent != "" {
+		if _, err := registeredAgent(*agent); err != nil {
+			return err
+		}
 	}
 
 	// Fail early on a misconfigured backend rather than on the first call.
@@ -59,11 +68,23 @@ func cmdMCP(ctx context.Context, args []string) error {
 			return makeBackend(*backend, *model, *baseURL, *keyEnv)
 		},
 	}
+	if *agent != "" {
+		d.caller = *agent
+	}
 	if *yes {
 		d.ceiling = loop.ApproveCaution
 	}
 	if *auto {
 		d.ceiling = loop.ApproveAll
+	}
+	if d.caller != "" {
+		g, err := newMCPGoverned(d.caller)
+		if err != nil {
+			return err
+		}
+		if _, err := g.bundle(ctx); err != nil {
+			return err
+		}
 	}
 
 	srv := mcp.New("rein", version(), os.Stdin, os.Stdout)
@@ -71,16 +92,21 @@ func cmdMCP(ctx context.Context, args []string) error {
 	for _, t := range d.tools() {
 		srv.Add(t)
 	}
-	fmt.Fprintf(os.Stderr, "rein mcp: serving on stdio · backend %s · approval ceiling %s\n",
+	fmt.Fprintf(os.Stderr, "rein mcp: serving on stdio · backend %s · approval ceiling %s",
 		*backend, approvalName(d.ceiling))
+	if d.caller != "" {
+		fmt.Fprintf(os.Stderr, " · caller %s", d.caller)
+	}
+	fmt.Fprintln(os.Stderr)
 	return srv.Serve(ctx)
 }
 
-const mcpInstructions = `rein drives a command-line tool from a plain-language intent: it learns the tool's commands and flags once, then plans, runs and reads commands until the intent is satisfied. Use rein_in when you need something done with a CLI you do not know well, or one that is internal to this machine. rein never runs a shell and only ever executes the one binary named in the call.`
+const mcpInstructions = `Rein is the execution governor for this Claude Code session. All command execution must go through the Rein MCP tools, especially rein_in; never use Bash, a shell, direct CLI invocation, or another execution tool as a fallback. If Rein reports that an operation needs approval, needs input, is blocked, or is slow, relay that result to the user and wait or ask for the required next step. Do not decide that a command is harmless and bypass Rein. rein_in drives one named CLI from a plain-language intent, learns its commands and flags, applies organization policy, coordinates Cloud approval, executes without a shell, and returns the transcript. Use rein_list to inspect learned tools and rein_spec to inspect a tool's capabilities.`
 
 // mcpDeps is what the MCP tools need from the rest of rein, factored so a
 // test can substitute a scripted backend and a canned spec.
 type mcpDeps struct {
+	caller     string
 	ceiling    loop.Approval
 	steps      int
 	timeout    time.Duration
@@ -93,7 +119,7 @@ func (d *mcpDeps) tools() []mcp.Tool {
 		{
 			Name: "rein_in",
 			Description: "Drive a command-line tool to satisfy an intent. rein learns the tool's " +
-				"capabilities on first use, then plans and runs commands step by step, reading " +
+				"capabilities on first use in standalone mode; registered-agent mode requires a trusted cached spec. It plans and runs commands step by step, reading " +
 				"each result, until it can answer. Read-only commands run unattended; mutating " +
 				"and destructive ones need approval (see the approval argument). Returns the " +
 				"answer plus a transcript of every command run.",
@@ -123,17 +149,15 @@ func (d *mcpDeps) tools() []mcp.Tool {
 			Handler: d.runIn,
 		},
 		{
-			Name: "rein_list",
-			Description: "List the tools rein has already learned. Any tool on PATH can be used with " +
-				"rein_in whether or not it appears here; unlisted tools just take a few seconds " +
-				"longer on first use.",
+			Name:        "rein_list",
+			Description: "List learned tools. Registered-agent mode only uses cached specs; a trusted operator must learn new tools outside the MCP session.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 			Handler:     d.list,
 		},
 		{
 			Name: "rein_spec",
 			Description: "Show what rein knows about a tool: its subcommands and their summaries. " +
-				"Learns the tool first if needed. Useful to check whether a tool can do something " +
+				"Standalone mode learns the tool if needed; registered-agent mode never runs discovery. Useful to check whether a tool can do something " +
 				"before asking rein_in to do it.",
 			InputSchema: json.RawMessage(`{
   "type": "object",
@@ -149,6 +173,11 @@ func (d *mcpDeps) tools() []mcp.Tool {
 }
 
 func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error) {
+	// Policies published in the dashboard become effective without requiring
+	// the user to restart MCP or run a separate sync command.
+	if d.caller == "" {
+		refreshCloudPolicy(ctx, 2*time.Minute)
+	}
 	var args struct {
 		Tool     string `json:"tool"`
 		Intent   string `json:"intent"`
@@ -179,7 +208,17 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 			approvalFlag(approval), approvalFlag(approval), args.Tool, args.Intent)
 	}
 
-	sp, err := d.newSpec(ctx, args.Tool, args.Refresh)
+	var governed *mcpGoverned
+	if d.caller != "" {
+		governed, err = newMCPGoverned(d.caller)
+		if err != nil {
+			return "", err
+		}
+		if _, err := governed.bundle(ctx); err != nil {
+			return "", err
+		}
+	}
+	sp, err := d.toolSpec(ctx, args.Tool, args.Refresh)
 	if err != nil {
 		return "", err
 	}
@@ -192,17 +231,65 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 	}
 
 	var transcript strings.Builder
-	answer, err := loop.Run(ctx, loop.Config{
+	cfg := loop.Config{
 		Spec:     sp,
 		Backend:  be,
 		Intent:   args.Intent,
 		MaxSteps: d.steps,
 		Approval: approval,
 		Timeout:  d.timeout,
-		Out:      &transcript,
-		In:       strings.NewReader(""), // headless: every prompt hits EOF and fails closed
-	})
+		Policy: func(argv []string, level risk.Level) error {
+			return policy.CheckIntent(d.caller, args.Intent, argv, level)
+		},
+		RequireApproval: func(argv []string, level risk.Level) bool {
+			return d.caller != "" && policy.RequiresApproval(d.caller, args.Intent, argv, level)
+		},
+		ApprovalCheck: func(argv []string) bool {
+			return d.caller != "" && cloudApprovalGranted(ctx, d.caller, args.Tool, args.Intent, argv)
+		},
+		Out: &transcript,
+		In:  strings.NewReader(""), // headless: every prompt hits EOF and fails closed
+	}
+	if governed != nil {
+		cfg.Policy, cfg.RequireApproval, cfg.ApprovalCheck = nil, nil, nil
+		cfg.Authorize = func(argv []string, level risk.Level) error {
+			return governed.authorize(ctx, args.Tool, args.Intent, argv, level)
+		}
+		cfg.BeforeExecute = func(argv []string) error { return governed.audit(ctx, "execution_started", nil, nil) }
+		cfg.AfterExecute = func(argv []string, result *runner.Result, runErr error) error {
+			return governed.audit(ctx, "execution_completed", result, runErr)
+		}
+	}
+	answer, err := loop.Run(ctx, cfg)
 	return formatOutcome(answer, err, approval, d.ceiling, stripANSI(transcript.String()))
+}
+
+func attemptedCommand(transcript string) string {
+	for _, line := range strings.Split(stripANSI(transcript), "\n") {
+		line = strings.TrimSpace(line)
+		if i := strings.Index(line, "$ "); i >= 0 {
+			return strings.TrimSpace(line[i+2:])
+		}
+	}
+	return ""
+}
+
+func auditEvent(err error) string {
+	if err == nil {
+		return "executed"
+	}
+	var needs *loop.NeedsInputError
+	switch {
+	case errors.As(err, &needs):
+		return "needs_input"
+	case errors.Is(err, loop.ErrNoTerminal):
+		return "approval_required"
+	case strings.Contains(strings.ToLower(err.Error()), "blocked by policy") ||
+		strings.Contains(strings.ToLower(err.Error()), "not permitted"):
+		return "policy_denied"
+	default:
+		return "failed"
+	}
 }
 
 // formatOutcome renders a finished run for the calling model. A stop at the
@@ -266,7 +353,7 @@ func (d *mcpDeps) showSpec(ctx context.Context, raw json.RawMessage) (string, er
 	if strings.TrimSpace(args.Tool) == "" {
 		return "", errors.New("tool is required")
 	}
-	sp, err := d.newSpec(ctx, strings.TrimSpace(args.Tool), args.Refresh)
+	sp, err := d.toolSpec(ctx, strings.TrimSpace(args.Tool), args.Refresh)
 	if err != nil {
 		return "", err
 	}
