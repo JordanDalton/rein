@@ -27,12 +27,28 @@ func guidedClaudeSetup(ctx context.Context) error {
 	if err := checkPersistentHost(ctx, "claude-code"); err != nil {
 		return fmt.Errorf("install Claude Code and sign in before setup: %w", err)
 	}
+	input := bufio.NewReader(os.Stdin)
+	missing, err := repairPersistentMissing("claude-code", false)
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		fmt.Printf("Missing Rein-managed files: %s\nRestore these files from the installation receipt? Existing files and undo backups will not be changed.\n", strings.Join(missing, ", "))
+		if !confirmSetup(input, os.Stdout) {
+			fmt.Println("Cancelled. No changes made.")
+			return nil
+		}
+		if _, err := repairPersistentMissing("claude-code", true); err != nil {
+			return err
+		}
+		fmt.Println("Missing files restored. Continuing setup verification.")
+	}
 	if err := configurePersistent("claude-code", "", "", false, false, false); err != nil {
 		return err
 	}
 	fmt.Println("Setup will use your active Rein connection (or open login), register claude-code if needed, install the settings shown above, and test MCP connectivity. Registration/login are not undone by --undo. No model requests or tool executions will be made.")
-	if !confirmSetup(os.Stdin, os.Stdout) {
-		fmt.Println("Cancelled. No changes made.")
+	if !confirmSetup(input, os.Stdout) {
+		fmt.Println("Setup cancelled. Any confirmed repair remains installed.")
 		return nil
 	}
 	p, err := loadCloudProfile()

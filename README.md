@@ -113,6 +113,9 @@ For guided Claude Code project setup, run `rein configure claude-code` in an
 interactive terminal. It previews changes and asks for confirmation, guides login
 if needed, registers the caller, installs persistent MCP/settings with backups,
 and verifies the MCP handshake without running tools or making model requests.
+If a previously installed file is missing, guided setup offers to restore it
+from its receipt after confirmation. Existing edited files are never overwritten,
+and the original undo backups are preserved.
 If verification fails, setup reports failure and leaves installed settings
 recoverable with `rein configure claude-code --persistent --undo`.
 Then start `claude`, trust the project settings/MCP, inspect `/mcp` and `/hooks`,
