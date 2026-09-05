@@ -42,9 +42,14 @@ func checkPersistentHost(ctx context.Context, host string) error {
 
 // Never return "allow": Rein's own policy and the host's other deny rules still apply.
 func runToolGuard(input io.Reader, output io.Writer) error {
+	return runToolGuardWithAudit(input, output, recordToolGuardBlock)
+}
+
+func runToolGuardWithAudit(input io.Reader, output io.Writer, audit func(context.Context, map[string]any) error) error {
 	var event struct {
-		Event string `json:"hook_event_name"`
-		Tool  string `json:"tool_name"`
+		Event string         `json:"hook_event_name"`
+		Tool  string         `json:"tool_name"`
+		Input map[string]any `json:"tool_input"`
 	}
 	data, err := io.ReadAll(io.LimitReader(input, 1024*1024+1))
 	valid := err == nil && len(data) <= 1024*1024 && json.Unmarshal(data, &event) == nil && event.Event == "PreToolUse"
@@ -55,11 +60,28 @@ func runToolGuard(input io.Reader, output io.Writer) error {
 			return err
 		}
 	}
+	reason := toolGuardReason
+	operation := map[string]any{"tool": "unknown"}
+	if valid {
+		operation = toolGuardOperation(event.Tool, event.Input)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- audit(ctx, operation) }()
+	select {
+	case auditErr := <-done:
+		if auditErr != nil {
+			reason += " Blocked attempt could not be recorded in Rein Control."
+		}
+	case <-ctx.Done():
+		reason += " Blocked attempt could not be recorded in Rein Control (audit timed out)."
+	}
 	return json.NewEncoder(output).Encode(map[string]any{
 		"hookSpecificOutput": map[string]any{
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       "deny",
-			"permissionDecisionReason": "This project routes operations through Rein MCP. Use Rein; do not fall back to native tools, other servers, or delegated agents.",
+			"permissionDecisionReason": reason,
 		},
 	})
 }

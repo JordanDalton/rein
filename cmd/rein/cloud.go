@@ -655,10 +655,14 @@ func storeCloudCredential(endpoint, token string) error {
 }
 
 func loadCloudCredential(endpoint string) (string, error) {
+	return loadCloudCredentialContext(context.Background(), endpoint)
+}
+
+func loadCloudCredentialContext(ctx context.Context, endpoint string) (string, error) {
 	if runtime.GOOS != "darwin" {
 		return "", errors.New("secure credential storage is not yet supported on this platform")
 	}
-	b, err := exec.Command("security", "find-generic-password", "-s", "rein", "-a", credentialAccount(endpoint), "-w").Output()
+	b, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", "rein", "-a", credentialAccount(endpoint), "-w").Output()
 	if err != nil {
 		return "", fmt.Errorf("%w; run `rein login` again", errCredentialNotFound)
 	}

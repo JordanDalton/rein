@@ -12,6 +12,7 @@ import (
 )
 
 func TestToolGuardDefaultDeny(t *testing.T) {
+	t.Setenv("REIN_HOME", t.TempDir())
 	for _, name := range []string{"Bash", "Read", "Write", "Edit", "apply_patch", "exec_command", "write_stdin", "python", "WebSearch", "Agent", "spawn_agent", "mcp__other__run", "mcp__rein_fake__rein_in", "mcp__rein__unknown", ""} {
 		input, _ := json.Marshal(map[string]string{"hook_event_name": "PreToolUse", "tool_name": name})
 		var output bytes.Buffer
