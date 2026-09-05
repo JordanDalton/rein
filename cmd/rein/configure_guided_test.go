@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -97,6 +98,7 @@ func TestGuidedSetupOutputIsConcise(t *testing.T) {
 		"No model requests or tool commands will run",
 		"Ready — Codex is connected through Rein Gateway.",
 		"✓ MCP handshake verified",
+		"Undo: rein undo codex",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in guided output:\n%s", want, got)
@@ -126,5 +128,16 @@ func TestGuidedHarnessProfileIsIdempotent(t *testing.T) {
 	}
 	if !profile.Gateway {
 		t.Fatal("guided profile does not use the gateway")
+	}
+	data, err := os.ReadFile(filepath.Join(".rein", "harnesses", "codex.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte(`"gateway": true`), []byte(`"gateway": false`), 1)
+	if err := os.WriteFile(filepath.Join(".rein", "harnesses", "codex.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := guidedHarnessProfile("codex", false); err == nil || !strings.Contains(err.Error(), "rein undo codex") {
+		t.Fatalf("profile conflict did not include one-command undo: %v", err)
 	}
 }

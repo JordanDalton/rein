@@ -211,13 +211,24 @@ production policy to make onboarding pass. Recheck after harness upgrades.
 
 ## Undo
 
+Undo the complete guided setup with one command:
+
 ```sh
-rein configure claude-code --undo
-rein configure codex --scope user --undo
+rein undo claude-code
 ```
 
-Undo restores the previous profile or removes one newly created by configure.
+To restore only one configuration mode, use the individual commands:
+
+```sh
+rein configure claude-code --persistent --undo
+rein configure claude-code --undo
+```
+
+Use `rein configure codex --scope user --undo` for a user-scoped launch profile.
+Undo restores the previous files or removes ones newly created by configure.
 It refuses to overwrite subsequent edits. Identical applies are no-ops; undo the
 existing setup before replacing it with a different one. Undo does not stop an
 already-running session or revoke credentials. Configuration paths containing
-symlinks are refused; choose a real project directory and Rein home.
+symlinks are refused; choose a real project directory and Rein home. The host
+argument scopes the operation, so `rein undo claude-code` leaves Codex setup and
+the shared Gateway running.

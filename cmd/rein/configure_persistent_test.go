@@ -182,8 +182,12 @@ func TestPersistentGatewaySetupIsIdempotent(t *testing.T) {
 	if err := configurePersistent("codex", "", "", true, true, false, false); err != nil {
 		t.Fatal("matching gateway apply is not idempotent:", err)
 	}
-	if err := configurePersistent("codex", "", "", false, false, false, false); err == nil {
+	err := configurePersistent("codex", "", "", false, false, false, false)
+	if err == nil {
 		t.Fatal("transport change did not require undo")
+	}
+	if !strings.Contains(err.Error(), "rein configure codex --persistent --undo") {
+		t.Fatalf("conflict did not include its undo command: %v", err)
 	}
 }
 

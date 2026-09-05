@@ -363,30 +363,46 @@ func saveHarnessProfile(path string, data []byte) error {
 	return writeHarnessExclusive(path, data)
 }
 
-func undoHarnessProfile(path string) error {
+func loadHarnessUndo(path string) (harnessReceipt, error) {
+	var receipt harnessReceipt
 	if err := rejectHarnessSymlinks(path); err != nil {
-		return err
+		return receipt, err
 	}
 	if err := rejectHarnessSymlinks(path + ".undo"); err != nil {
-		return err
+		return receipt, err
 	}
 	backup, err := os.ReadFile(path + ".undo")
 	if err != nil {
-		return err
+		return receipt, err
 	}
-	var receipt harnessReceipt
 	if err := json.Unmarshal(backup, &receipt); err != nil {
-		return err
+		return receipt, err
 	}
 	if len(receipt.Installed) == 0 {
-		return errors.New("invalid undo receipt")
+		return receipt, errors.New("invalid undo receipt")
 	}
 	current, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return receipt, err
 	}
 	if !bytes.Equal(current, receipt.Installed) {
-		return errors.New("profile changed since configure; refusing to overwrite your edits")
+		return receipt, errors.New("profile changed since configure; refusing to overwrite your edits")
+	}
+	return receipt, nil
+}
+
+func undoHarnessProfile(path string) error {
+	return undoHarnessProfileOutput(path, true)
+}
+
+func undoHarnessProfileQuiet(path string) error {
+	return undoHarnessProfileOutput(path, false)
+}
+
+func undoHarnessProfileOutput(path string, verbose bool) error {
+	receipt, err := loadHarnessUndo(path)
+	if err != nil {
+		return err
 	}
 	if receipt.Existed {
 		err = replaceHarnessFile(path, receipt.Previous)
@@ -399,8 +415,65 @@ func undoHarnessProfile(path string) error {
 	if err := os.Remove(path + ".undo"); err != nil {
 		return err
 	}
-	fmt.Println("Rein launch profile undone. Harness settings and registered credentials were not changed.")
+	if verbose {
+		fmt.Println("Rein launch profile undone. Harness settings and registered credentials were not changed.")
+	}
 	return nil
+}
+
+func undoAllHarnessSetup(host string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	persistentReceiptPath := filepath.Join(cwd, ".rein", "harnesses", host+".persistent.json")
+	profilePath := filepath.Join(cwd, ".rein", "harnesses", host+".json")
+
+	_, persistentErr := os.Stat(persistentReceiptPath)
+	hasPersistent := persistentErr == nil
+	if persistentErr != nil && !os.IsNotExist(persistentErr) {
+		return persistentErr
+	}
+	_, profileErr := os.Stat(profilePath + ".undo")
+	hasProfile := profileErr == nil
+	if profileErr != nil && !os.IsNotExist(profileErr) {
+		return profileErr
+	}
+	if !hasPersistent && !hasProfile {
+		return errors.New("no guided setup receipts found in this project")
+	}
+
+	// Validate every target before restoring either half of guided setup.
+	if hasPersistent {
+		if err := validatePersistentUndo(host); err != nil {
+			return fmt.Errorf("persistent settings cannot be restored: %w", err)
+		}
+	}
+	if hasProfile {
+		if _, err := loadHarnessUndo(profilePath); err != nil {
+			return fmt.Errorf("launch profile cannot be restored: %w", err)
+		}
+	}
+
+	if hasPersistent {
+		if err := configurePersistentQuiet(host, "", "", false, false, false, true); err != nil {
+			return err
+		}
+	}
+	if hasProfile {
+		if err := undoHarnessProfileQuiet(profilePath); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("Guided %s setup restored. Agent credentials and the running Gateway were not changed.\n", guidedHarnessName(host))
+	return nil
+}
+
+func cmdUndo(args []string) error {
+	if len(args) != 1 || args[0] != "claude-code" && args[0] != "codex" {
+		return errors.New("usage: rein undo <claude-code|codex>")
+	}
+	return undoAllHarnessSetup(args[0])
 }
 
 func replaceHarnessFile(path string, data []byte) error {

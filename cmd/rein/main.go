@@ -61,6 +61,7 @@ usage:
   rein agent list              list registered callers
   rein agent revoke NAME       revoke a registered caller
   rein configure [HOST]        preview harness launch or --persistent project setup
+  rein undo HOST               restore the complete guided setup for a project
   rein gateway start|status    run one persistent local MCP gateway for agents
   rein ci check|run            non-interactive workload authentication and CI execution
   rein mcp                     serve rein's tools over MCP on stdio, so an
@@ -150,6 +151,8 @@ func run(args []string) error {
 		return cmdAgent(ctx, args[1:])
 	case "configure":
 		return cmdConfigure(ctx, args[1:])
+	case "undo":
+		return cmdUndo(args[1:])
 	case "gateway":
 		return cmdGateway(ctx, args[1:])
 	case "ci":

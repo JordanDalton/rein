@@ -117,7 +117,7 @@ For named MCP callers and central approvals, follow the
 [enterprise setup guide](docs/enterprise.md).
 
 For guided project setup, run `rein configure claude-code` or `rein configure codex` in an
-interactive terminal. It previews changes and asks for confirmation, guides login
+interactive terminal. It summarizes changes and asks for confirmation, guides login
 if needed, registers the caller, starts the persistent local Rein Gateway, installs persistent MCP/settings with backups,
 and saves the project launch profile (the same operation as `--apply`),
 and verifies the MCP handshake without running tools or making model requests.
@@ -125,11 +125,10 @@ If a previously installed file is missing, guided setup offers to restore it
 from its receipt after confirmation. Existing edited files are never overwritten,
 and the original undo backups are preserved.
 Both normal harness launches and `rein configure HOST --launch` are supported.
-To undo both, run `rein configure HOST --persistent --undo`, then
-`rein configure HOST --undo`. A conflicting saved launch profile is not replaced
-automatically; undo it before changing its settings.
+To undo both, run `rein undo HOST`. A conflicting saved launch profile is not replaced
+automatically; the error points to that same command before changing its settings.
 If verification fails, setup reports failure and leaves installed settings
-recoverable with `rein configure claude-code --persistent --undo`.
+recoverable with `rein undo claude-code`.
 The installed MCP bridge uses `rein gateway connect --agent HOST`; agent sessions
 share the gateway daemon instead of launching a separate Rein MCP runtime. Manage
 it with `rein gateway status`, `rein gateway stop`, and `rein gateway start`.

@@ -78,6 +78,8 @@ type persistentReceipt struct {
 	Files   []persistentFile
 }
 
+var errPersistentSetupConflict = errors.New("existing persistent setup uses different binary, transport, or planner options")
+
 func persistentPaths(host string) []string {
 	if host == "claude-code" {
 		return []string{".claude/settings.json", ".mcp.json"}
@@ -230,6 +232,40 @@ func validatePersistentReceipt(receipt persistentReceipt, host string) error {
 	return nil
 }
 
+func validatePersistentUndo(host string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	receiptPath := filepath.Join(cwd, ".rein", "harnesses", host+".persistent.json")
+	if err := rejectHarnessSymlinks(receiptPath); err != nil {
+		return err
+	}
+	saved, err := os.ReadFile(receiptPath)
+	if err != nil {
+		return err
+	}
+	var receipt persistentReceipt
+	if json.Unmarshal(saved, &receipt) != nil {
+		return errors.New("invalid persistent receipt")
+	}
+	if err := validatePersistentReceipt(receipt, host); err != nil {
+		return err
+	}
+	for _, f := range receipt.Files {
+		current, err := readPersistentFile(filepath.Join(cwd, f.Path))
+		if err != nil {
+			return err
+		}
+		matches := current.Existed && bytes.Equal(current.Before, f.After)
+		restored := current.Existed == f.Existed && bytes.Equal(current.Before, f.Before)
+		if !matches && !restored {
+			return fmt.Errorf("configuration drift in %s; refusing to overwrite edits", f.Path)
+		}
+	}
+	return nil
+}
+
 func configurePersistent(host, backend, model string, gateway, apply, check, undo bool) error {
 	return configurePersistentOutput(host, backend, model, gateway, apply, check, undo, true)
 }
@@ -308,7 +344,7 @@ func configurePersistentOutput(host, backend, model string, gateway, apply, chec
 					return err
 				}
 				if !bytes.Equal(expected, f.After) {
-					return errors.New("undo the existing persistent setup before changing binary, transport, or planner options")
+					return fmt.Errorf("%w; run `rein configure %s --persistent --undo` before changing it", errPersistentSetupConflict, host)
 				}
 			}
 		}

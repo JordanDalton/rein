@@ -60,8 +60,7 @@ func printGuidedSetupComplete(out io.Writer, host string) {
 	fmt.Fprintf(out, "  1. Start a fresh %s session.\n", guidedHarnessName(host))
 	fmt.Fprintln(out, "  2. Trust this project's settings and inspect /mcp and /hooks.")
 	fmt.Fprintln(out, "  3. Ask for a harmless operation and confirm it appears in Rein Activity.")
-	fmt.Fprintf(out, "\nUndo: rein configure %s --persistent --undo\n", host)
-	fmt.Fprintf(out, "      rein configure %s --undo\n", host)
+	fmt.Fprintf(out, "\nUndo: rein undo %s\n", host)
 }
 
 func guidedHarnessProfile(host string, save bool) error {
@@ -89,7 +88,7 @@ func guidedHarnessProfile(host string, save bool) error {
 	data = append(data, '\n')
 	existing, readErr := os.ReadFile(path)
 	if readErr == nil && !bytes.Equal(existing, data) {
-		return errors.New("undo the existing launch profile before changing its binary or transport")
+		return fmt.Errorf("existing launch profile uses a different binary or transport; run `rein undo %s`, then retry `rein configure %s`", host, host)
 	}
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return readErr
@@ -125,6 +124,9 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 		fmt.Println("Missing files restored. Continuing setup verification.")
 	}
 	if err := configurePersistentQuiet(host, "", "", true, false, false, false); err != nil {
+		if errors.Is(err, errPersistentSetupConflict) {
+			return fmt.Errorf("existing setup uses different binary, transport, or planner options; run `rein undo %s`, then retry `rein configure %s`", host, host)
+		}
 		return err
 	}
 	if err := guidedHarnessProfile(host, false); err != nil {
@@ -174,7 +176,7 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 		return err
 	}
 	if err := checkHarnessMCP(ctx, host); err != nil {
-		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings and launch profile remain installed; fix the cause and rerun setup, or restore with rein configure %s --persistent --undo followed by rein configure %s --undo", err, host, host)
+		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings and launch profile remain installed; fix the cause and rerun setup, or restore with `rein undo %s`", err, host)
 	}
 	printGuidedSetupComplete(os.Stdout, host)
 	return nil

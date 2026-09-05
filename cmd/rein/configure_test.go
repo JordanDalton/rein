@@ -172,6 +172,97 @@ func TestConfigureUndoRefusesEdits(t *testing.T) {
 	}
 }
 
+func TestUndoRestoresGuidedSetup(t *testing.T) {
+	dir := configureTestDir(t)
+	t.Chdir(dir)
+	if err := configurePersistent("codex", "", "", true, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := guidedHarnessProfile("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := filepath.Join(".rein", "harnesses", "codex.persistent.json")
+	receiptData, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt persistentReceipt
+	if err := json.Unmarshal(receiptData, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	receipt.Binary = "/missing/rein"
+	receiptData, _ = json.Marshal(receipt)
+	if err := os.WriteFile(receiptPath, receiptData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdUndo([]string{"codex"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		".codex/config.toml",
+		".rein/harnesses/codex.persistent.json",
+		".rein/harnesses/codex.json",
+		".rein/harnesses/codex.json.undo",
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("guided setup file still exists: %s", path)
+		}
+	}
+}
+
+func TestUndoPreflightsEveryReceipt(t *testing.T) {
+	dir := configureTestDir(t)
+	t.Chdir(dir)
+	if err := configurePersistent("codex", "", "", true, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := guidedHarnessProfile("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(".rein", "harnesses", "codex.json")
+	if err := os.WriteFile(profilePath, []byte("edited"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdUndo([]string{"codex"}); err == nil {
+		t.Fatal("undo ignored launch profile drift")
+	}
+	if _, err := os.Stat(filepath.Join(".rein", "harnesses", "codex.persistent.json")); err != nil {
+		t.Fatal("persistent setup changed before all receipts passed validation")
+	}
+	if _, err := os.Stat(filepath.Join(".codex", "config.toml")); err != nil {
+		t.Fatal("persistent settings changed before all receipts passed validation")
+	}
+}
+
+func TestUndoIsScopedToOneHost(t *testing.T) {
+	dir := configureTestDir(t)
+	t.Chdir(dir)
+	for _, host := range []string{"codex", "claude-code"} {
+		if err := configurePersistent(host, "", "", true, true, false, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := guidedHarnessProfile(host, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdUndo([]string{"claude-code"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		".codex/config.toml",
+		".rein/harnesses/codex.persistent.json",
+		".rein/harnesses/codex.json",
+		".rein/harnesses/codex.json.undo",
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("Codex setup changed while undoing Claude Code: %s: %v", path, err)
+		}
+	}
+	if err := cmdUndo(nil); err == nil || !strings.Contains(err.Error(), "rein undo") {
+		t.Fatalf("missing undo usage: %v", err)
+	}
+}
+
 func TestConfigureRefusesSymlinks(t *testing.T) {
 	dir := configureTestDir(t)
 	target := filepath.Join(dir, "target")
