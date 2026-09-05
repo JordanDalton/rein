@@ -192,7 +192,7 @@ func cmdLogin(ctx context.Context, args []string) error {
 	go server.Serve(listener)
 	defer server.Shutdown(context.Background())
 
-	fmt.Printf("Opening Rein Cloud to enroll %q…\n", *deviceName)
+	fmt.Printf("Opening Rein Control to enroll %q…\n", *deviceName)
 	if err := openBrowser(loginURL.String()); err != nil {
 		return fmt.Errorf("open browser: %w\nOpen this URL manually: %s", err, loginURL)
 	}
@@ -232,7 +232,7 @@ func cmdStatus(ctx context.Context, args []string) error {
 		return err
 	}
 	if profile == nil {
-		fmt.Println("Rein Cloud: not connected\nRun `rein login` to enroll this installation.")
+		fmt.Println("Rein Control: not connected\nRun `rein login` to enroll this installation.")
 		return nil
 	}
 	token, err := loadCloudCredential(profile.ControlURL)
@@ -241,14 +241,14 @@ func cmdStatus(ctx context.Context, args []string) error {
 	}
 	identity, err := fetchCloudStatus(ctx, profile.ControlURL, token)
 	if err != nil {
-		return fmt.Errorf("Rein Cloud: %w", err)
+		return fmt.Errorf("Rein Control: %w", err)
 	}
 	profile.Organization, profile.TeamSlug, profile.User, profile.DeviceID, profile.DeviceName = identity.Organization, identity.TeamSlug, identity.User, identity.DeviceID, identity.DeviceName
 	profile.LastContact = time.Now().UTC()
 	if err := saveCloudProfile(*profile); err != nil {
 		return err
 	}
-	fmt.Printf("Rein Cloud\n\nOrganization: %s\nTeam: %s\nUser: %s\nDevice: %s\nLast sync: just now\n", profile.Organization, profile.TeamSlug, profile.User, profile.DeviceName)
+	fmt.Printf("Rein Control\n\nOrganization: %s\nTeam: %s\nUser: %s\nDevice: %s\nLast sync: just now\n", profile.Organization, profile.TeamSlug, profile.User, profile.DeviceName)
 	return nil
 }
 
@@ -431,7 +431,7 @@ func cmdLogout(ctx context.Context, args []string) error {
 	if err := os.Remove(cloudAgentsPath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	fmt.Println("Rein Cloud device revoked and local credentials removed.")
+	fmt.Println("Rein Control device revoked and local credentials removed.")
 	return nil
 }
 

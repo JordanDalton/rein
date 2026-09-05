@@ -9,6 +9,20 @@ import (
 
 func join(a []string) string { return strings.Join(a, "|") }
 
+func TestHelpBanner(t *testing.T) {
+	if !strings.HasPrefix(usage, banner) || !strings.Contains(banner, "reincontrol.com") {
+		t.Fatal("help must begin with the Rein banner")
+	}
+	if strings.Contains(banner, "\x1b") {
+		t.Fatal("banner must be readable without ANSI support")
+	}
+	for _, line := range strings.Split(banner, "\n") {
+		if len(line) > 48 {
+			t.Fatal("banner must fit a narrow terminal")
+		}
+	}
+}
+
 // A rein flag typed after the intent must be honoured, not swallowed into
 // the intent — that silently defeated --auto.
 func TestHoistFlagsAfterIntent(t *testing.T) {

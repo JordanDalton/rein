@@ -183,7 +183,7 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 			err = cfg.Authorize(plan.Argv, level)
 			ok = err == nil
 		} else if cfg.ApprovalCheck != nil && cfg.ApprovalCheck(plan.Argv) {
-			fmt.Fprintln(cfg.Out, "  approved by Rein Cloud policy review")
+			fmt.Fprintln(cfg.Out, "  approved by Rein Control policy review")
 			ok = true
 		} else {
 			ok, err = g.approve(cfg, level, required)

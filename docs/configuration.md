@@ -126,7 +126,7 @@ rein in --backend openai-compatible --model our-model git "..."
 | `REIN_BASE_URL` | endpoint for `--backend openai-compatible` (same as `--base-url`) | unset |
 | `REIN_PLANNER_TIMEOUT` | how long to wait for the model each step, e.g. `15m` for slow local inference | `5m` |
 | `REIN_HOME` | where learned specs and run archives live | `~/.rein` |
-| `REIN_CONTROL_URL` | Rein Cloud control plane for `login` and `status` | `https://reincontrol.com` |
+| `REIN_CONTROL_URL` | Rein Control endpoint for `login` and `status` | `https://reincontrol.com` |
 
 Flags always win over environment variables. Provider variables
 (`OPENAI_API_KEY` and friends) are only consulted when neither `--api-key-env`

@@ -12,7 +12,7 @@ func cmdApproval(ctx context.Context, args []string) error {
 	}
 	p, err := loadCloudProfile()
 	if err != nil || p == nil {
-		return fmt.Errorf("not connected to Rein Cloud — run `rein login`")
+		return fmt.Errorf("not connected to Rein Control — run `rein login`")
 	}
 	token, err := loadCloudCredential(p.ControlURL)
 	if err != nil {

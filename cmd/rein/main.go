@@ -28,7 +28,19 @@ import (
 	"github.com/jordandalton/rein/internal/spec"
 )
 
-const usage = `rein — wrap a CLI in an agentic loop
+const banner = `
+  ____  _____ ___ _   _
+ |  _ \| ____|_ _| \ | |
+ | |_) |  _|  | ||  \| |
+ |  _ <| |___ | || |\  |
+ |_| \_\_____|___|_| \_|
+
+ CLI execution. Governed by you.
+ reincontrol.com
+`
+
+const usage = banner + `
+rein — wrap a CLI in an agentic loop
 
 usage:
   rein in <tool> <intent...>   drive <tool> until the intent is satisfied
@@ -38,9 +50,9 @@ usage:
   rein <tool> <intent...>      the same; "in" is optional when <tool> is on PATH
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
-  rein login                   connect this installation to Rein Cloud
-  rein logout                  revoke this device's Rein Cloud credential
-  rein status                  show this installation's Rein Cloud identity
+  rein login                   connect this installation to Rein Control
+  rein logout                  revoke this device's Rein Control credential
+  rein status                  show this installation's Rein Control identity
   rein team list                list local team profiles
   rein team use NAME             switch the active team profile
   rein sync                    download the latest organization policy bundle

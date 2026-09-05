@@ -1,4 +1,4 @@
-// Package policy applies the first local Rein Cloud policy slice.
+// Package policy applies the first local Rein Control policy slice.
 package policy
 
 import (

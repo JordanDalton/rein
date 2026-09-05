@@ -4,7 +4,7 @@ Turn intent into CLI commands. Rein learns your tools, plans commands, checks
 their risk, and iterates on the output.
 
 Use the open-source CLI on your machine, or connect to **Rein Enterprise** for
-organization policies, approval workflows, and audit visibility through Rein Cloud.
+organization policies, approval workflows, and audit visibility through Rein Control.
 
 ```bash
 rein in git "what changed in the last two commits, and who wrote them?"
@@ -18,10 +18,10 @@ output; commands classified as mutating or destructive ask for approval by defau
 
 ## Open source and Enterprise
 
-The CLI works without a Rein Cloud account. Enterprise connects that execution
+The CLI works without a Rein Control account. Enterprise connects that execution
 layer to shared controls for teams and their agents.
 
-| | Open-source CLI | Enterprise through Rein Cloud |
+| | Open-source CLI | Enterprise through Rein Control |
 |---|---|---|
 | Tool discovery | Local capability maps and caching | Uses the same CLI foundation |
 | Models | Agent CLIs, hosted APIs, and local endpoints | Uses the same backend choices |
@@ -64,7 +64,7 @@ rein in --backend ollama --model qwen2.5 git "summarize recent work"
 
 Hosted APIs and custom endpoints are supported too. See
 [model backends and configuration](docs/configuration.md).
-Model-provider charges may apply; a Rein Cloud account is not required for local use.
+Model-provider charges may apply; a Rein Control account is not required for local use.
 
 ## Everyday use
 
@@ -96,7 +96,7 @@ See [MCP setup and approval levels](docs/mcp.md).
 
 ## Connect your organization
 
-For an existing Rein Cloud organization, enroll your installation and download
+For an existing Rein Control organization, enroll your installation and download
 its policy bundle:
 
 ```bash
@@ -151,7 +151,7 @@ the higher risk assessment wins.
 
 Execution happens on your machine. Intent, tool capabilities, and redacted
 command observations go to your selected model backend. Connected, registered
-MCP callers also send audit and approval metadata to Rein Cloud.
+MCP callers also send audit and approval metadata to Rein Control.
 
 Risk classification and redaction are heuristic. Rein is not an OS sandbox, and
 controls apply to operations routed through it. Interactive tools requiring a

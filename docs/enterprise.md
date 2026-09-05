@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-Rein Enterprise adds shared controls through Rein Cloud. This repository ships
+Rein Enterprise adds shared controls through Rein Control. This repository ships
 client integration; the control plane is a separate service. Organization access
 is required. Visit [Rein Enterprise](https://reincontrol.com) for the offering.
 

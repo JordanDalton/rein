@@ -21,6 +21,12 @@ func TestCloudURL(t *testing.T) {
 	}
 }
 
+func TestHelpUsesReinControlBranding(t *testing.T) {
+	if !strings.Contains(usage, "Rein Control") || strings.Contains(usage, "Rein Cloud") {
+		t.Fatal("help must use Rein Control branding")
+	}
+}
+
 func TestLocalPolicyMetadataOnlyMatchesApplicableApprovalRules(t *testing.T) {
 	t.Setenv("REIN_HOME", t.TempDir())
 	policy := `{"version":7,"rules":[{"effect":"require_approval","caller":"claude-code","tool":"kubectl","environment":"production","access":"write"}]}`
