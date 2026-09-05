@@ -114,3 +114,20 @@ func TestFetchCloudStatusRejectsIncompleteResponse(t *testing.T) {
 		t.Fatal("expected incomplete response error")
 	}
 }
+
+func TestCloudDeleteTreatsAnAlreadyMissingResourceAsSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %q", r.Method)
+		}
+		if r.Header.Get("Authorization") != "Bearer device-token" {
+			t.Error("missing bearer token")
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	if err := cloudDelete(context.Background(), server.URL+"/agent", "device-token"); err != nil {
+		t.Fatalf("idempotent delete failed: %v", err)
+	}
+}

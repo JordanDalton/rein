@@ -666,7 +666,23 @@ func cloudJSON(ctx context.Context, method, endpoint, token string, body any, ou
 	return nil
 }
 func cloudDelete(ctx context.Context, endpoint, token string) error {
-	return cloudJSON(ctx, http.MethodDelete, endpoint, token, nil, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := cloudHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("request returned %s", resp.Status)
+	}
+	return nil
 }
 
 func emitAudit(ctx context.Context, caller, tool, intent, event string) error {
