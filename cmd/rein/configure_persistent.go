@@ -282,8 +282,25 @@ func configurePersistent(host, backend, model string, gateway, apply, check, und
 			fmt.Println("Persistent settings restored. Original bytes and permissions recovered; credentials unchanged.")
 			return nil
 		}
-		if !check && (backend != "" || model != "" || gateway) {
-			return errors.New("undo the existing persistent setup before changing transport or planner options")
+		if !check {
+			binary, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			binary, err = filepath.EvalSymlinks(binary)
+			if err != nil {
+				return err
+			}
+			profile := harnessProfile{Host: host, Rein: binary, Backend: backend, Model: model, Gateway: gateway}
+			for _, f := range receipt.Files {
+				expected, err := mergePersistent(f.Before, f.Path, profile)
+				if err != nil {
+					return err
+				}
+				if !bytes.Equal(expected, f.After) {
+					return errors.New("undo the existing persistent setup before changing binary, transport, or planner options")
+				}
+			}
 		}
 		if check {
 			info, err := os.Stat(receipt.Binary)

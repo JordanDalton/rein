@@ -169,6 +169,24 @@ func TestPersistentPreviewApplyDriftUndo(t *testing.T) {
 	}
 }
 
+func TestPersistentGatewaySetupIsIdempotent(t *testing.T) {
+	dir := configureTestDir(t)
+	t.Chdir(dir)
+
+	if err := configurePersistent("codex", "", "", true, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := configurePersistent("codex", "", "", true, false, false, false); err != nil {
+		t.Fatal("matching gateway preview is not idempotent:", err)
+	}
+	if err := configurePersistent("codex", "", "", true, true, false, false); err != nil {
+		t.Fatal("matching gateway apply is not idempotent:", err)
+	}
+	if err := configurePersistent("codex", "", "", false, false, false, false); err == nil {
+		t.Fatal("transport change did not require undo")
+	}
+}
+
 func TestPersistentRefusesSymlinksAndForeignReceipts(t *testing.T) {
 	dir := configureTestDir(t)
 	t.Chdir(dir)
