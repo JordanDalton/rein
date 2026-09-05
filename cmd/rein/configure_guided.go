@@ -48,7 +48,10 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 	if err := configurePersistent(host, "", "", false, false, false); err != nil {
 		return err
 	}
-	fmt.Printf("Setup will use your active Rein connection (or open login), register %s if needed, install the settings shown above, and test MCP connectivity. Registration/login are not undone by --undo. No model requests or tool executions will be made.\n", host)
+	if err := cmdConfigure(ctx, []string{host, "--dry-run"}); err != nil {
+		return err
+	}
+	fmt.Printf("Setup will use your active Rein connection (or open login), register %s if needed, save the launch profile AND install persistent settings shown above, and test MCP connectivity. Registration/login are not undone by --undo. No model requests or tool executions will be made.\n", host)
 	if !confirmSetup(input, os.Stdout) {
 		fmt.Println("Setup cancelled. Any confirmed repair remains installed.")
 		return nil
@@ -71,17 +74,21 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 			return err
 		}
 	}
+	if err := cmdConfigure(ctx, []string{host, "--apply"}); err != nil {
+		return fmt.Errorf("launch profile could not be saved; existing profiles are protected (use --undo before replacing a different profile): %w", err)
+	}
 	if err := configurePersistent(host, "", "", true, false, false); err != nil {
-		return err
+		return fmt.Errorf("persistent setup incomplete; launch profile remains saved (restore it with rein configure %s --undo): %w", host, err)
 	}
 	if err := configurePersistent(host, "", "", false, true, false); err != nil {
 		return err
 	}
 	if err := checkHarnessMCP(ctx, host); err != nil {
-		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings remain installed; fix the cause and rerun setup, or restore with rein configure %s --persistent --undo", err, host)
+		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings and launch profile remain installed; fix the cause and rerun setup, or restore with rein configure %s --persistent --undo followed by rein configure %s --undo", err, host, host)
 	}
 	fmt.Printf("Configuration and MCP handshake verified. Runtime enforcement is NOT yet verified. Start %s, trust this project's MCP/settings, inspect /mcp and /hooks, then test native-tool blocking. Publish policy in Rein Control and cache trusted CLI specs with rein spec TOOL before execution tests.\n", harnessBinary(host))
 	printPersistentCoverage(host)
+	fmt.Printf("Launch profile also saved: rein configure %s --launch\nTo restore both configurations, run rein configure %s --persistent --undo, then rein configure %s --undo.\n", host, host, host)
 	return nil
 }
 

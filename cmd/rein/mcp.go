@@ -214,12 +214,20 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 		if err != nil {
 			return "", err
 		}
-		if _, err := governed.bundle(ctx); err != nil {
-			return "", err
+		governed.operation = map[string]any{"tool": args.Tool, "intent": args.Intent}
+		bundle, err := governed.bundle(ctx)
+		if bundle.Version > 0 {
+			governed.operation["policy_version"] = bundle.Version
+		}
+		if err != nil {
+			return "", governed.recordBlock(ctx, "policy_preflight", err)
 		}
 	}
 	sp, err := d.toolSpec(ctx, args.Tool, args.Refresh)
 	if err != nil {
+		if governed != nil {
+			return "", governed.recordBlock(ctx, "spec_preflight", err)
+		}
 		return "", err
 	}
 	be, err := d.newBackend()
@@ -253,9 +261,17 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 	if governed != nil {
 		cfg.Policy, cfg.RequireApproval, cfg.ApprovalCheck = nil, nil, nil
 		cfg.Authorize = func(argv []string, level risk.Level) error {
-			return governed.authorize(ctx, args.Tool, args.Intent, argv, level)
+			if err := governed.authorize(ctx, args.Tool, args.Intent, argv, level); err != nil {
+				return governed.recordBlock(ctx, "authorization", err)
+			}
+			return nil
 		}
-		cfg.BeforeExecute = func(argv []string) error { return governed.audit(ctx, "execution_started", nil, nil) }
+		cfg.BeforeExecute = func(argv []string) error {
+			if err := governed.audit(ctx, "execution_started", nil, nil); err != nil {
+				return governed.recordBlock(ctx, "before_execution", err)
+			}
+			return nil
+		}
 		cfg.AfterExecute = func(argv []string, result *runner.Result, runErr error) error {
 			return governed.audit(ctx, "execution_completed", result, runErr)
 		}

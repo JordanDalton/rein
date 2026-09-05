@@ -112,10 +112,15 @@ For named MCP callers and central approvals, follow the
 For guided project setup, run `rein configure claude-code` or `rein configure codex` in an
 interactive terminal. It previews changes and asks for confirmation, guides login
 if needed, registers the caller, installs persistent MCP/settings with backups,
+and saves the project launch profile (the same operation as `--apply`),
 and verifies the MCP handshake without running tools or making model requests.
 If a previously installed file is missing, guided setup offers to restore it
 from its receipt after confirmation. Existing edited files are never overwritten,
 and the original undo backups are preserved.
+Both normal harness launches and `rein configure HOST --launch` are supported.
+To undo both, run `rein configure HOST --persistent --undo`, then
+`rein configure HOST --undo`. A conflicting saved launch profile is not replaced
+automatically; undo it before changing its settings.
 If verification fails, setup reports failure and leaves installed settings
 recoverable with `rein configure claude-code --persistent --undo`.
 Then start `claude`, trust the project settings/MCP, inspect `/mcp` and `/hooks`,
@@ -123,6 +128,14 @@ and verify native-tool blocking. For Codex, start `codex` instead; setup checks
 hook support and installs `.codex/config.toml`. Codex coverage remains partial:
 trust the project configuration and hooks, and verify restrictions in-session.
 Connectivity is not proof of runtime enforcement.
+
+To require cached specs for your intended tools during guided setup, use
+`rein configure codex --require-spec cat,git` (also supported for `claude-code`).
+Add `--persistent --check` for a noninteractive configuration/spec check.
+Missing specs fail with an explicit trusted-operator `rein spec TOOL` instruction;
+setup never discovers tools automatically. Governed MCP records policy/spec and
+authorization blocks as non-executed Activity events. If audit delivery fails,
+the operation stays blocked and the error reports that Activity could not be updated.
 
 Alternatively, preview and save a restricted harness launch profile without rewriting existing
 Claude Code or Codex settings:

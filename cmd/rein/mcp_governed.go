@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jordandalton/rein/internal/risk"
 	"github.com/jordandalton/rein/internal/runner"
@@ -65,10 +66,12 @@ func governedHash(operation map[string]any) string {
 }
 
 func (g *mcpGoverned) authorize(ctx context.Context, tool, intent string, argv []string, level risk.Level) error {
+	g.operation = map[string]any{"tool": tool, "intent": intent, "argv": append([]string(nil), argv...), "command": runner.Quote(argv), "caller": g.caller}
 	b, err := g.bundle(ctx)
 	if err != nil {
 		return err
 	}
+	g.operation["policy_version"] = b.Version
 	decision, err := ciDecision(b, g.caller, "", argv)
 	if err != nil {
 		return err
@@ -100,6 +103,25 @@ func (g *mcpGoverned) authorize(ctx context.Context, tool, intent string, argv [
 		return err
 	}
 	return errors.New("needs-approval: exact command submitted to Rein Control; approve there and retry the same operation. Do not bypass Rein or increase local approval flags")
+}
+
+// A failed audit never permits execution and is reported separately from the block.
+func (g *mcpGoverned) recordBlock(ctx context.Context, stage string, cause error) error {
+	event := "blocked"
+	if strings.Contains(cause.Error(), "blocked by policy") {
+		event = "policy_denied"
+	}
+	if strings.Contains(cause.Error(), "needs-approval:") {
+		event = "approval_required"
+	}
+	err := g.request(ctx, http.MethodPost, "audit-events", map[string]any{
+		"caller": g.caller, "event": event, "operation": g.operation,
+		"metadata": map[string]any{"executed": false, "stage": stage, "reason": cause.Error()},
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("%w; blocked attempt could not be recorded in Activity: %v", cause, err)
+	}
+	return cause
 }
 
 func (g *mcpGoverned) audit(ctx context.Context, event string, result *runner.Result, runErr error) error {
@@ -135,7 +157,7 @@ func (d *mcpDeps) toolSpec(ctx context.Context, tool string, refresh bool) (*spe
 		return nil, err
 	}
 	if s == nil {
-		return nil, fmt.Errorf("no trusted cached spec for %s; ask a trusted operator to run rein spec %s first", tool, tool)
+		return nil, fmt.Errorf("setup incomplete: no trusted cached spec for %s; a trusted operator must run `rein spec %s` using this Rein profile, then retry. Automatic discovery is disabled; nothing was executed", tool, tool)
 	}
 	return s, nil
 }

@@ -19,6 +19,7 @@ const configureUsage = `usage: rein configure [claude-code|codex] [flags]
   --scope project|user   project (default) or this user's Rein home
   --backend NAME         Rein's planner backend, not the outer harness backend
   --model NAME           Rein's planner model, not the outer harness model
+  --require-spec TOOLS   comma-separated trusted cached specs required for setup/check
   --dry-run              preview only; never starts interactive setup
   --apply                save a Rein-owned launch profile
   --persistent           install project-level tool guard and MCP settings instead
@@ -86,11 +87,23 @@ func cmdConfigure(ctx context.Context, args []string) error {
 	backend := fs.String("backend", "", "")
 	model := fs.String("model", "", "")
 	persistent := fs.Bool("persistent", false, "")
+	requiredSpecs := fs.String("require-spec", "", "")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 || (*scope != "project" && *scope != "user") {
 		return errors.New(configureUsage)
+	}
+	if *requiredSpecs != "" {
+		if *undo {
+			return errors.New("--require-spec cannot be used with --undo")
+		}
+		if err := checkRequiredSpecs(ctx, *requiredSpecs); err != nil {
+			return err
+		}
+		if len(args) == 3 && args[1] == "--require-spec" || len(args) == 2 && strings.HasPrefix(args[1], "--require-spec=") {
+			return guidedHarnessSetup(ctx, host)
+		}
 	}
 	actions := 0
 	for _, enabled := range []bool{*dry, *apply, *check, *launch, *undo} {

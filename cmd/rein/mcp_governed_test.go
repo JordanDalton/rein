@@ -88,3 +88,47 @@ func TestGovernedSpecNeverDiscovers(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockAuditPreservesFailure(t *testing.T) {
+	for _, offline := range []bool{false, true} {
+		cause := errors.New("blocked by policy: denied")
+		g := &mcpGoverned{caller: "codex", operation: map[string]any{"tool": "cat", "policy_version": 2}}
+		g.request = func(_ context.Context, method, route string, body, out any) error {
+			if method != "POST" || route != "audit-events" {
+				t.Fatal(method, route)
+			}
+			payload := body.(map[string]any)
+			if payload["event"] != "policy_denied" || payload["caller"] != "codex" {
+				t.Fatal(payload)
+			}
+			metadata := payload["metadata"].(map[string]any)
+			if metadata["executed"] != false || metadata["stage"] != "authorization" || metadata["reason"] != cause.Error() {
+				t.Fatal(metadata)
+			}
+			if offline {
+				return errors.New("offline")
+			}
+			return nil
+		}
+		err := g.recordBlock(context.Background(), "authorization", cause)
+		if !errors.Is(err, cause) {
+			t.Fatal("lost original block", err)
+		}
+		if offline && !strings.Contains(err.Error(), "could not be recorded") {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestRequiredSpecsFailWithoutDiscovery(t *testing.T) {
+	t.Setenv("REIN_HOME", t.TempDir())
+	for _, name := range []string{"cat", "cat,git", "../cat", "cat;touch marker", "cat,"} {
+		if err := checkRequiredSpecs(context.Background(), name); err == nil {
+			t.Fatalf("accepted %q", name)
+		}
+	}
+	err := checkRequiredSpecs(context.Background(), "cat")
+	if !strings.Contains(err.Error(), "rein spec cat") || !strings.Contains(err.Error(), "nothing was executed") {
+		t.Fatal(err)
+	}
+}
