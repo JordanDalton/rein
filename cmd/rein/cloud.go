@@ -55,8 +55,9 @@ type cloudAgents struct {
 }
 
 var (
-	openBrowser     = openCloudBrowser
-	cloudHTTPClient = &http.Client{Timeout: 15 * time.Second}
+	openBrowser           = openCloudBrowser
+	cloudHTTPClient       = &http.Client{Timeout: 15 * time.Second}
+	errCredentialNotFound = errors.New("credential not found")
 )
 
 func cloudURL(override string) string {
@@ -467,6 +468,85 @@ func cmdTeam(args []string) error {
 	return os.WriteFile(filepath.Join(spec.Home(), "active-profile"), []byte(args[1]+"\n"), 0o600)
 }
 
+func registerCloudAgent(ctx context.Context, profile *cloudProfile, deviceToken, provider string, verbose bool) error {
+	provider = strings.ToLower(provider)
+	var reply struct {
+		cloudAgent
+		Token string `json:"token"`
+	}
+	if err := cloudJSON(ctx, http.MethodPost, profile.ControlURL+"/api/v1/rein/agents", deviceToken, map[string]string{"provider": provider}, &reply); err != nil {
+		return err
+	}
+	if reply.ID == "" || reply.Token == "" {
+		return errors.New("control plane returned an incomplete agent registration")
+	}
+	if err := storeAgentCredential(profile.ControlURL, reply.ID, reply.Token); err != nil {
+		return err
+	}
+	agents, _ := loadAgents()
+	agents.Agents = append(agents.Agents, reply.cloudAgent)
+	if err := saveAgents(agents); err != nil {
+		return err
+	}
+	if verbose {
+		fmt.Printf("Registered %s (%s). Connect it with `rein gateway connect --agent %s`.\n", reply.Provider, reply.ID, reply.Provider)
+	}
+	return nil
+}
+
+func revokeCloudAgent(ctx context.Context, profile *cloudProfile, deviceToken string, agent cloudAgent, verbose bool) error {
+	if err := cloudDelete(ctx, profile.ControlURL+"/api/v1/rein/agents/"+url.PathEscape(agent.ID), deviceToken); err != nil {
+		return err
+	}
+	agents, _ := loadAgents()
+	kept := cloudAgents{}
+	for _, item := range agents.Agents {
+		if item.ID != agent.ID {
+			kept.Agents = append(kept.Agents, item)
+		}
+	}
+	if err := saveAgents(kept); err != nil {
+		return err
+	}
+	_ = deleteAgentCredential(profile.ControlURL, agent.ID)
+	if verbose {
+		fmt.Printf("Revoked %s.\n", agent.Provider)
+	}
+	return nil
+}
+
+func ensureAgentCredential(ctx context.Context, provider string) error {
+	profile, err := loadCloudProfile()
+	if err != nil {
+		return err
+	}
+	if profile == nil {
+		return errors.New("not connected; run `rein login` first")
+	}
+	deviceToken, err := loadCloudCredential(profile.ControlURL)
+	if err != nil {
+		return err
+	}
+	agent, err := registeredAgent(provider)
+	if err != nil {
+		return registerCloudAgent(ctx, profile, deviceToken, provider, false)
+	}
+	agentToken, credentialErr := loadAgentCredential(profile.ControlURL, agent.ID)
+	if credentialErr == nil && agentToken != "" {
+		return nil
+	}
+	if credentialErr != nil && !errors.Is(credentialErr, errCredentialNotFound) {
+		return credentialErr
+	}
+	if err := revokeCloudAgent(ctx, profile, deviceToken, agent, false); err != nil {
+		return fmt.Errorf("stale %s registration could not be revoked: %w", provider, err)
+	}
+	if err := registerCloudAgent(ctx, profile, deviceToken, provider, false); err != nil {
+		return fmt.Errorf("%s credential could not be repaired: %w", provider, err)
+	}
+	return nil
+}
+
 func cmdAgent(ctx context.Context, args []string) error {
 	if len(args) < 1 {
 		return errors.New("usage: rein agent <register|list|revoke> [name]")
@@ -503,27 +583,7 @@ func cmdAgent(ctx context.Context, args []string) error {
 		if len(args) != 2 {
 			return errors.New("usage: rein agent register <codex|claude-code>")
 		}
-		provider := strings.ToLower(args[1])
-		var reply struct {
-			cloudAgent
-			Token string `json:"token"`
-		}
-		if err := cloudJSON(ctx, http.MethodPost, p.ControlURL+"/api/v1/rein/agents", token, map[string]string{"provider": provider}, &reply); err != nil {
-			return err
-		}
-		if reply.ID == "" || reply.Token == "" {
-			return errors.New("control plane returned an incomplete agent registration")
-		}
-		if err := storeAgentCredential(p.ControlURL, reply.ID, reply.Token); err != nil {
-			return err
-		}
-		agents, _ := loadAgents()
-		agents.Agents = append(agents.Agents, reply.cloudAgent)
-		if err := saveAgents(agents); err != nil {
-			return err
-		}
-		fmt.Printf("Registered %s (%s). Connect it with `rein gateway connect --agent %s`.\n", reply.Provider, reply.ID, reply.Provider)
-		return nil
+		return registerCloudAgent(ctx, p, token, args[1], true)
 	case "revoke":
 		if len(args) != 2 {
 			return errors.New("usage: rein agent revoke <name>")
@@ -532,22 +592,7 @@ func cmdAgent(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := cloudDelete(ctx, p.ControlURL+"/api/v1/rein/agents/"+url.PathEscape(a.ID), token); err != nil {
-			return err
-		}
-		agents, _ := loadAgents()
-		kept := cloudAgents{}
-		for _, item := range agents.Agents {
-			if item.ID != a.ID {
-				kept.Agents = append(kept.Agents, item)
-			}
-		}
-		if err := saveAgents(kept); err != nil {
-			return err
-		}
-		_ = deleteAgentCredential(p.ControlURL, a.ID)
-		fmt.Printf("Revoked %s.\n", a.Provider)
-		return nil
+		return revokeCloudAgent(ctx, p, token, a, true)
 	default:
 		return errors.New("usage: rein agent <register|list|revoke> [name]")
 	}
@@ -615,7 +660,7 @@ func loadCloudCredential(endpoint string) (string, error) {
 	}
 	b, err := exec.Command("security", "find-generic-password", "-s", "rein", "-a", credentialAccount(endpoint), "-w").Output()
 	if err != nil {
-		return "", errors.New("credential not found; run `rein login` again")
+		return "", fmt.Errorf("%w; run `rein login` again", errCredentialNotFound)
 	}
 	return strings.TrimSpace(string(b)), nil
 }

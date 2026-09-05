@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +131,68 @@ func TestCloudDeleteTreatsAnAlreadyMissingResourceAsSuccess(t *testing.T) {
 
 	if err := cloudDelete(context.Background(), server.URL+"/agent", "device-token"); err != nil {
 		t.Fatalf("idempotent delete failed: %v", err)
+	}
+}
+
+func TestEnsureAgentCredentialRepairsStaleRegistration(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("secure credential storage is currently implemented with macOS Keychain")
+	}
+	home := t.TempDir()
+	t.Setenv("REIN_HOME", home)
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch r.Method {
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"new-agent","name":"claude-code","provider":"claude-code","token":"new-agent-token"}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	if err := saveCloudProfile(cloudProfile{ControlURL: server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveAgents(cloudAgents{Agents: []cloudAgent{{ID: "old-agent", Name: "claude-code", Provider: "claude-code"}}}); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	trace := filepath.Join(home, "security-args")
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+case "$*" in
+  *find-generic-password*old-agent*) exit 44 ;;
+  *find-generic-password*) printf 'device-token\n' ;;
+esac
+exit 0
+`, trace)
+	if err := os.WriteFile(filepath.Join(bin, "security"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	if err := ensureAgentCredential(context.Background(), "claude-code"); err != nil {
+		t.Fatal(err)
+	}
+	agents, err := loadAgents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents.Agents) != 1 || agents.Agents[0].ID != "new-agent" {
+		t.Fatalf("stale registration was not replaced: %#v", agents.Agents)
+	}
+	if strings.Join(requests, ",") != "DELETE /api/v1/rein/agents/old-agent,POST /api/v1/rein/agents" {
+		t.Fatalf("unexpected repair requests: %#v", requests)
+	}
+	securityArgs, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(securityArgs), "add-generic-password") || !strings.Contains(string(securityArgs), "new-agent") {
+		t.Fatalf("replacement credential was not stored: %s", securityArgs)
 	}
 }

@@ -150,10 +150,8 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 			return err
 		}
 	}
-	if _, err := registeredAgent(host); err != nil {
-		if err := cmdAgent(ctx, []string{"register", host}); err != nil {
-			return err
-		}
+	if err := ensureAgentCredential(ctx, host); err != nil {
+		return fmt.Errorf("agent identity is not ready: %w", err)
 	}
 	// Fail before installing restrictions if the saved origin or agent credential is invalid.
 	if _, err := newMCPGoverned(host); err != nil {
