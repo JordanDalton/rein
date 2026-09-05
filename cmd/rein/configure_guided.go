@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,6 +21,83 @@ func confirmSetup(in io.Reader, out io.Writer) bool {
 	fmt.Fprint(out, "Continue? [y/N] ")
 	line, err := bufio.NewReader(in).ReadString('\n')
 	return err == nil && (strings.EqualFold(strings.TrimSpace(line), "y") || strings.EqualFold(strings.TrimSpace(line), "yes"))
+}
+
+func guidedHarnessName(host string) string {
+	if host == "claude-code" {
+		return "Claude Code"
+	}
+	return "Codex"
+}
+
+func printGuidedSetupPlan(out io.Writer, host, project string) {
+	fmt.Fprintf(out, "\nRein setup — %s\n\n", guidedHarnessName(host))
+	fmt.Fprintf(out, "  Project     %s\n", project)
+	fmt.Fprintf(out, "  Agent       %s\n", host)
+	fmt.Fprintln(out, "  Connection  Persistent Rein Gateway")
+	fmt.Fprintln(out, "  Approval    Read-only by default")
+	fmt.Fprintln(out, "\nThis will:")
+	fmt.Fprintln(out, "  • reuse or register the agent identity")
+	fmt.Fprintln(out, "  • start the local Gateway")
+	fmt.Fprintln(out, "  • install project guardrails and the MCP bridge")
+	fmt.Fprintln(out, "  • verify the MCP handshake")
+	fmt.Fprintln(out, "\nNo model requests or tool commands will run during setup.")
+	if host == "codex" {
+		fmt.Fprintln(out, "Codex coverage is partial; review /mcp, /hooks, and alternate tools after setup.")
+	} else {
+		fmt.Fprintln(out, "Trust the project settings, then review /mcp and /hooks after setup.")
+	}
+	fmt.Fprintln(out)
+}
+
+func printGuidedSetupComplete(out io.Writer, host string) {
+	fmt.Fprintf(out, "\nReady — %s is connected through Rein Gateway.\n\n", guidedHarnessName(host))
+	fmt.Fprintln(out, "  ✓ Agent identity ready")
+	fmt.Fprintln(out, "  ✓ Gateway running")
+	fmt.Fprintln(out, "  ✓ Project guardrails installed")
+	fmt.Fprintln(out, "  ✓ MCP handshake verified")
+	fmt.Fprintln(out, "\nNext:")
+	fmt.Fprintf(out, "  1. Start a fresh %s session.\n", guidedHarnessName(host))
+	fmt.Fprintln(out, "  2. Trust this project's settings and inspect /mcp and /hooks.")
+	fmt.Fprintln(out, "  3. Ask for a harmless operation and confirm it appears in Rein Activity.")
+	fmt.Fprintf(out, "\nUndo: rein configure %s --persistent --undo\n", host)
+	fmt.Fprintf(out, "      rein configure %s --undo\n", host)
+}
+
+func guidedHarnessProfile(host string, save bool) error {
+	root, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(root, ".rein", "harnesses", host+".json")
+	if err := rejectHarnessSymlinks(path); err != nil {
+		return err
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	binary, err = filepath.EvalSymlinks(binary)
+	if err != nil {
+		return err
+	}
+	profile := harnessProfile{Version: 1, Host: host, Rein: binary, Gateway: true}
+	data, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	existing, readErr := os.ReadFile(path)
+	if readErr == nil && !bytes.Equal(existing, data) {
+		return errors.New("undo the existing launch profile before changing its binary or transport")
+	}
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if !save || readErr == nil {
+		return nil
+	}
+	return saveHarnessProfile(path, data)
 }
 
 func guidedHarnessSetup(ctx context.Context, host string) error {
@@ -45,13 +124,17 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 		}
 		fmt.Println("Missing files restored. Continuing setup verification.")
 	}
-	if err := configurePersistent(host, "", "", true, false, false, false); err != nil {
+	if err := configurePersistentQuiet(host, "", "", true, false, false, false); err != nil {
 		return err
 	}
-	if err := cmdConfigure(ctx, []string{host, "--gateway", "--dry-run"}); err != nil {
+	if err := guidedHarnessProfile(host, false); err != nil {
 		return err
 	}
-	fmt.Printf("Setup will use your active Rein connection (or open login), register %s if needed, start the local gateway, save the launch profile AND install persistent settings shown above, and test MCP connectivity. Registration/login and the running gateway are not undone by --undo. No model requests or tool executions will be made.\n", host)
+	project, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	printGuidedSetupPlan(os.Stdout, host, project)
 	if !confirmSetup(input, os.Stdout) {
 		fmt.Println("Setup cancelled. Any confirmed repair remains installed.")
 		return nil
@@ -78,24 +161,22 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 	if err != nil {
 		return err
 	}
-	if err := startGateway(ctx, opts); err != nil {
+	if err := startGatewayQuiet(ctx, opts); err != nil {
 		return fmt.Errorf("gateway could not be started: %w", err)
 	}
-	if err := cmdConfigure(ctx, []string{host, "--gateway", "--apply"}); err != nil {
+	if err := guidedHarnessProfile(host, true); err != nil {
 		return fmt.Errorf("launch profile could not be saved; existing profiles are protected (use --undo before replacing a different profile): %w", err)
 	}
-	if err := configurePersistent(host, "", "", true, true, false, false); err != nil {
+	if err := configurePersistentQuiet(host, "", "", true, true, false, false); err != nil {
 		return fmt.Errorf("persistent setup incomplete; launch profile remains saved (restore it with rein configure %s --undo): %w", host, err)
 	}
-	if err := configurePersistent(host, "", "", false, false, true, false); err != nil {
+	if err := configurePersistentQuiet(host, "", "", false, false, true, false); err != nil {
 		return err
 	}
 	if err := checkHarnessMCP(ctx, host); err != nil {
 		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings and launch profile remain installed; fix the cause and rerun setup, or restore with rein configure %s --persistent --undo followed by rein configure %s --undo", err, host, host)
 	}
-	fmt.Printf("Configuration and MCP handshake verified. Runtime enforcement is NOT yet verified. Start %s, trust this project's MCP/settings, inspect /mcp and /hooks, then test native-tool blocking. Publish policy in Rein Control and cache trusted CLI specs with rein spec TOOL before execution tests.\n", harnessBinary(host))
-	printPersistentCoverage(host)
-	fmt.Printf("Launch profile also saved: rein configure %s --launch\nTo restore both configurations, run rein configure %s --persistent --undo, then rein configure %s --undo.\n", host, host, host)
+	printGuidedSetupComplete(os.Stdout, host)
 	return nil
 }
 

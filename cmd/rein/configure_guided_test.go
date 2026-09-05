@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -82,5 +83,48 @@ func TestConfirmSetup(t *testing.T) {
 		if got := confirmSetup(strings.NewReader(tc.input), io.Discard); got != tc.want {
 			t.Errorf("confirm %q = %v, want %v", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestGuidedSetupOutputIsConcise(t *testing.T) {
+	var output strings.Builder
+	printGuidedSetupPlan(&output, "codex", "/tmp/project")
+	printGuidedSetupComplete(&output, "codex")
+	got := output.String()
+	for _, want := range []string{
+		"Rein setup — Codex",
+		"Connection  Persistent Rein Gateway",
+		"No model requests or tool commands will run",
+		"Ready — Codex is connected through Rein Gateway.",
+		"✓ MCP handshake verified",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in guided output:\n%s", want, got)
+		}
+	}
+	for _, noisy := range []string{"Exact argument array", "PARTIAL COVERAGE:", `"gateway": true`} {
+		if strings.Contains(got, noisy) {
+			t.Errorf("guided output contains internal detail %q:\n%s", noisy, got)
+		}
+	}
+}
+
+func TestGuidedHarnessProfileIsIdempotent(t *testing.T) {
+	t.Chdir(configureTestDir(t))
+	if err := guidedHarnessProfile("codex", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := guidedHarnessProfile("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := guidedHarnessProfile("codex", true); err != nil {
+		t.Fatal("matching profile is not idempotent:", err)
+	}
+	profile, err := readHarnessProfile(filepath.Join(".rein", "harnesses", "codex.json"), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !profile.Gateway {
+		t.Fatal("guided profile does not use the gateway")
 	}
 }

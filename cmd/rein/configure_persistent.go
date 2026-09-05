@@ -231,6 +231,14 @@ func validatePersistentReceipt(receipt persistentReceipt, host string) error {
 }
 
 func configurePersistent(host, backend, model string, gateway, apply, check, undo bool) error {
+	return configurePersistentOutput(host, backend, model, gateway, apply, check, undo, true)
+}
+
+func configurePersistentQuiet(host, backend, model string, gateway, apply, check, undo bool) error {
+	return configurePersistentOutput(host, backend, model, gateway, apply, check, undo, false)
+}
+
+func configurePersistentOutput(host, backend, model string, gateway, apply, check, undo, verbose bool) error {
 	if runtime.GOOS == "windows" {
 		return errors.New("persistent hooks currently support macOS/Linux only; Windows enforcement is not implemented")
 	}
@@ -279,7 +287,9 @@ func configurePersistent(host, backend, model string, gateway, apply, check, und
 			if err := os.Remove(receiptPath); err != nil {
 				return err
 			}
-			fmt.Println("Persistent settings restored. Original bytes and permissions recovered; credentials unchanged.")
+			if verbose {
+				fmt.Println("Persistent settings restored. Original bytes and permissions recovered; credentials unchanged.")
+			}
 			return nil
 		}
 		if !check {
@@ -308,8 +318,10 @@ func configurePersistent(host, backend, model string, gateway, apply, check, und
 				return errors.New("saved Rein binary missing or not executable")
 			}
 		}
-		fmt.Println("Persistent files match the installation receipt. Runtime enforcement is UNVERIFIED.")
-		printPersistentCoverage(host)
+		if verbose {
+			fmt.Println("Persistent files match the installation receipt. Runtime enforcement is UNVERIFIED.")
+			printPersistentCoverage(host)
+		}
 		return nil
 	} else if !os.IsNotExist(readErr) {
 		return readErr
@@ -341,16 +353,22 @@ func configurePersistent(host, backend, model string, gateway, apply, check, und
 			return err
 		}
 		receipt.Files = append(receipt.Files, f)
-		fmt.Printf("Will merge %s (original backed up; TOML/JSON formatting may change).\n", relative)
+		if verbose {
+			fmt.Printf("Will merge %s (original backed up; TOML/JSON formatting may change).\n", relative)
+		}
 	}
 	transport := "a dedicated Rein MCP process"
 	if gateway {
 		transport = "the persistent local Rein Gateway"
 	}
-	fmt.Printf("Plan: connect to %s; install a default-deny PreToolUse guard allowing only Rein's three tool names. Existing hooks and other settings are preserved and require separate audit.\n", transport)
-	printPersistentCoverage(host)
+	if verbose {
+		fmt.Printf("Plan: connect to %s; install a default-deny PreToolUse guard allowing only Rein's three tool names. Existing hooks and other settings are preserved and require separate audit.\n", transport)
+		printPersistentCoverage(host)
+	}
 	if !apply {
-		fmt.Println("Preview only. Repeat with --persistent --apply to install.")
+		if verbose {
+			fmt.Println("Preview only. Repeat with --persistent --apply to install.")
+		}
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(receiptPath), 0700); err != nil {
@@ -398,7 +416,9 @@ func configurePersistent(host, backend, model string, gateway, apply, check, und
 		}
 		installed++
 	}
-	fmt.Printf("Installed. Restart %s in this project, review/trust hooks and Rein MCP, then test bypass attempts. Check: rein configure %s --persistent --check\nUndo: rein configure %s --persistent --undo\n", harnessBinary(host), host, host)
+	if verbose {
+		fmt.Printf("Installed. Restart %s in this project, review/trust hooks and Rein MCP, then test bypass attempts. Check: rein configure %s --persistent --check\nUndo: rein configure %s --persistent --undo\n", harnessBinary(host), host, host)
+	}
 	return nil
 }
 

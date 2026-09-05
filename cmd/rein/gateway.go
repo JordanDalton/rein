@@ -156,11 +156,21 @@ func (o gatewayOptions) serveArgs() []string {
 }
 
 func startGateway(ctx context.Context, opts gatewayOptions) error {
+	return startGatewayOutput(ctx, opts, true)
+}
+
+func startGatewayQuiet(ctx context.Context, opts gatewayOptions) error {
+	return startGatewayOutput(ctx, opts, false)
+}
+
+func startGatewayOutput(ctx context.Context, opts gatewayOptions, verbose bool) error {
 	if reply, err := gatewayControl(ctx, opts.socket, gatewayHello{Type: "health"}); err == nil {
 		if !reply.matches(opts) {
 			return fmt.Errorf("Rein Gateway is already running with different settings (backend %s, approval ceiling %s); stop it before changing gateway settings", reply.Backend, reply.Ceiling)
 		}
-		fmt.Printf("Rein Gateway is already running (pid %d, %s).\n", reply.PID, opts.socket)
+		if verbose {
+			fmt.Printf("Rein Gateway is already running (pid %d, %s).\n", reply.PID, opts.socket)
+		}
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(opts.socket), 0o700); err != nil {
@@ -187,7 +197,9 @@ func startGateway(ctx context.Context, opts gatewayOptions) error {
 	defer ticker.Stop()
 	for {
 		if reply, checkErr := gatewayControl(waitCtx, opts.socket, gatewayHello{Type: "health"}); checkErr == nil {
-			fmt.Printf("Rein Gateway started (pid %d, %s). Logs: %s\n", reply.PID, opts.socket, gatewayLogPath())
+			if verbose {
+				fmt.Printf("Rein Gateway started (pid %d, %s). Logs: %s\n", reply.PID, opts.socket, gatewayLogPath())
+			}
 			return nil
 		}
 		select {
