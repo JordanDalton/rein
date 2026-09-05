@@ -54,6 +54,21 @@ Stop and restart the gateway to change those options. Its environment and PATH
 are captured when it starts, so restart after changing credentials, PATH, or
 installed tools.
 
+## How agent requests reach the gateway
+
+Users can ask the configured agent for work normally; prompts do not need to
+mention Rein or MCP. Guided setup installs project instructions and host
+restrictions that route supported operations through the Rein MCP tools. The
+stdio bridge forwards each MCP request to the persistent gateway, which plans,
+checks current organization policy, executes locally when allowed, and reports
+the outcome.
+
+The bridge fails closed when the gateway is unavailable: it returns a transport
+error and cannot execute the operation itself. Host restrictions must also
+prevent fallback to native shell, file, runtime, browser, plugin, or other MCP
+tools. A stopped gateway closes existing bridges; after restarting it, begin a
+fresh agent session if the host does not reconnect the MCP transport.
+
 ## Explicit harness configuration
 
 To preview or install gateway-backed configuration without interactive setup:

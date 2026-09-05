@@ -71,7 +71,8 @@ rein approval list
 ```
 
 An approved operation can be retried by the caller. Approval is checked against
-the proposed operation; it does not raise the MCP server's approval ceiling.
+the proposed operation; it does not raise the Gateway or direct MCP runtime's
+approval ceiling.
 
 ## Profiles and device management
 
@@ -91,13 +92,15 @@ share `REIN_HOME`, so profiles are not isolated workspaces. Use separate
 
 - Central policy evaluation is wired into MCP execution. Direct `rein in` runs
   use the local risk and approval gate without the Cloud policy callbacks.
-- Central approval requests and audit events require a named MCP caller through
-  `--agent`. Registering a caller alone does not configure a client to use it.
-- MCP refreshes policies at startup and before calls when the cache is at least
-  two minutes old. It retains cached policy if refresh fails. Missing or invalid
-  policy files do not automatically block execution.
-- Audit submission is best effort. These events are not a guaranteed archive of
-  every command or a copy of the full local run transcript.
+- Central approval requests and audit events require a named caller through the
+  Gateway bridge or legacy direct `rein mcp --agent NAME`. Registering a caller
+  alone does not configure a client to use it.
+- Registered-agent MCP fetches a live policy before planning and before every
+  command. Network, authentication, malformed-policy, and expiration failures
+  stop execution; it does not use an offline policy fallback.
+- A failed pre-execution audit blocks the command. A failed completion audit
+  stops the planning loop and warns that the command may already have run.
+  Activity contains operation metadata rather than the complete local transcript.
 - Rein applies controls to commands routed through it. Configure the calling
   agent's execution permissions separately if it must not use other tools.
 

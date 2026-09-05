@@ -337,8 +337,8 @@ func formatOutcome(answer string, err error, approval, ceiling loop.Approval, tr
 			fmt.Fprintf(&b, "To run it, ask the user, then call rein_in again with approval %q.",
 				approvalName(min(ceiling, approval+1)))
 		} else {
-			fmt.Fprintf(&b, "This server's ceiling is %q, so it cannot run here. Ask the user; they can "+
-				"restart the server with `rein mcp --%s` or run the command themselves.",
+			fmt.Fprintf(&b, "This Rein runtime's ceiling is %q, so it cannot run here. Ask the user; they can "+
+				"restart the Gateway or direct MCP server with `--%s`, or run the command themselves.",
 				approvalName(ceiling), approvalFlag(ceiling+1))
 		}
 	default:

@@ -147,12 +147,14 @@ setup never discovers tools automatically. Governed MCP records policy/spec and
 authorization blocks as non-executed Activity events. If audit delivery fails,
 the operation stays blocked and the error reports that Activity could not be updated.
 
-Alternatively, preview and save a restricted harness launch profile without rewriting existing
-Claude Code or Codex settings:
+Alternatively, preview and save a gateway-backed restricted launch profile
+without rewriting existing Claude Code or Codex settings:
 
 ```bash
-rein configure
-rein configure claude-code --apply
+rein gateway start
+rein agent register claude-code
+rein configure claude-code --gateway --dry-run
+rein configure claude-code --gateway --apply
 rein configure claude-code --launch
 ```
 
@@ -161,7 +163,8 @@ See also the [runtime validation results and test command](docs/harness-runtime-
 Restrictions apply only to this launcher; Codex coverage is explicitly partial.
 
 For persistent project settings on macOS/Linux, use
-`rein configure claude-code --persistent --dry-run`, then `--persistent --apply`.
+`rein configure claude-code --gateway --persistent --dry-run`, then
+`--gateway --persistent --apply` after starting the Gateway.
 Replace `claude-code` with `codex` for Codex. This installs a default-deny tool
 hook plus Rein MCP registration for normal project launches, with backups,
 `--persistent --check`, and `--persistent --undo`. Review/trust the hooks in a

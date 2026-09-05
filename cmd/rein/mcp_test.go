@@ -121,7 +121,7 @@ func TestMCPStopAtCeilingSaysSo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got, "ceiling") || !strings.Contains(got, "rein mcp --yes") {
+	if !strings.Contains(got, "ceiling") || !strings.Contains(got, "Gateway or direct MCP server with `--yes`") {
 		t.Errorf("should explain the ceiling and how to raise it:\n%s", got)
 	}
 }

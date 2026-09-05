@@ -7,7 +7,12 @@ and before each command; network, authentication, malformed-policy, and
 expiration errors stop execution. There is no offline cache fallback in this
 mode.
 
-This mode requires an explicit matching allow or approval rule. Unmatched operations are denied, which is stricter than the interactive default. Environment-specific rules do not match: MCP currently has no trusted environment selection. Use unconditional rules or CI's explicit environment option as appropriate.
+This mode requires an explicit matching allow or approval rule. Unmatched
+operations are denied, which is stricter than the interactive default. Access
+rules can match `read`, `write`, or `destructive` exactly; `any` matches every
+classification. Environment-specific rules do not match because MCP currently
+has no trusted environment selection. Use unconditional rules or CI's explicit
+environment option as appropriate.
 
 Before starting the harness, a trusted operator must run `rein spec TOOL` for each approved executable. Discovery runs the executable's help/version probes, so it belongs outside the untrusted agent session. Governed `rein_in` and `rein_spec` refuse discovery and refresh requests. Cached specs and installed executables must be protected by host permissions.
 

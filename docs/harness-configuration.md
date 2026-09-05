@@ -4,16 +4,26 @@
 unless you explicitly pass `--apply`.
 
 Interactive setup starts the persistent local Rein Gateway and configures the
-harness to use `rein gateway connect --agent HOST`. The explicit commands below
-retain the dedicated `rein mcp` transport unless `--gateway` is supplied.
+harness to use `rein gateway connect --agent HOST`. It is the recommended setup:
 
 ```sh
-rein configure
-rein configure claude-code --dry-run
-rein configure claude-code --apply
+rein configure claude-code
+```
+
+For preview-first setup, start the gateway and select it explicitly when saving
+the launch profile:
+
+```sh
+rein gateway start
+rein agent register claude-code
+rein configure claude-code --gateway --dry-run
+rein configure claude-code --gateway --apply
 rein configure claude-code --check
 rein configure claude-code --launch
 ```
+
+Explicit configuration without `--gateway` retains the standalone `rein mcp`
+transport for compatibility.
 
 Use an installed Rein binary, not `go run`: the launch profile stores the absolute
 path to the running executable. If you move the binary, undo and configure again.
@@ -29,8 +39,9 @@ project, rather than opting into a Rein launcher each time:
 
 ```sh
 rein agent register claude-code
-rein configure claude-code --persistent --dry-run
-rein configure claude-code --persistent --apply
+rein gateway start
+rein configure claude-code --gateway --persistent --dry-run
+rein configure claude-code --gateway --persistent --apply
 rein configure claude-code --persistent --check
 # Restart Claude, review/trust project settings, hooks, and MCP, then test.
 rein configure claude-code --persistent --undo
@@ -38,9 +49,10 @@ rein configure claude-code --persistent --undo
 
 Replace `claude-code` with `codex` for Codex. Persistent mode currently supports
 project scope only; it rejects user scope, `--launch`, and combined `--register`.
-Add `--gateway` to explicit preview/apply commands to use the running gateway.
-Backend/model options still configure only Rein's planner. Use an installed Rein
-binary, not `go run`, and keep it at the saved location while the guard is installed.
+Backend/model options still configure only Rein's planner. For gateway-backed
+configuration, pass them to `rein gateway start`; options saved in a standalone
+profile apply to its dedicated `rein mcp` process. Use an installed Rein binary,
+not `go run`, and keep it at the saved location while the guard is installed.
 
 - Claude merges `.claude/settings.json` and `.mcp.json`, adding native-tool deny
   rules plus a catch-all `PreToolUse` hook. Rein's server uses `alwaysLoad: true`
@@ -101,25 +113,26 @@ The remainder of this guide describes the separate, opt-in launch-profile mode
 
 ### Use a different model inside Rein
 
-The harness model and Rein's planning model are independent. Choose Rein's model
-while creating the launch profile:
+The harness model and Rein's planning model are independent. For the preferred
+gateway transport, choose Rein's model when starting the gateway:
 
 ```sh
-rein configure claude-code --backend ollama --model YOUR_LOCAL_MODEL --dry-run
-rein configure claude-code --backend ollama --model YOUR_LOCAL_MODEL --apply
+rein gateway stop
+rein gateway start --backend ollama --model YOUR_LOCAL_MODEL
+rein configure claude-code --gateway --dry-run
+rein configure claude-code --gateway --apply
 rein configure claude-code --launch
 ```
 
 Replace `YOUR_LOCAL_MODEL` with an installed model. For a hosted backend, use
 `--backend openai --model YOUR_MODEL_ID` and configure that backend's credentials
 in the environment. Configuration does not provision credentials or download models.
-Only backend/model names are saved; no API key values are stored.
-
-These options become arguments to `rein mcp`, never flags changing the outer
-Claude Code or Codex model. Omit them to retain Rein's normal defaults (including
-the `claude-cli` backend). They are configuration-time options; `--launch` uses
-the saved values. For an existing different profile, undo it before applying the
-replacement, consistent with the single-undo-point workflow below.
+No API key values are stored in the harness profile. Gateway options apply to
+every connected agent and never change the outer Claude Code or Codex model.
+For the standalone transport, `--backend` and `--model` remain configuration-time
+options that become arguments to `rein mcp`; `--launch` uses the saved values.
+For an existing different profile, undo it before applying the replacement,
+consistent with the single-undo-point workflow below.
 
 See [backend configuration](configuration.md) for supported backends and credentials.
 
@@ -150,9 +163,11 @@ fails, the identity remains registered; inspect `rein agent list` before retryin
 Existing caller registrations are reused, not duplicated. Existing registration
 and credential checks do not establish that the remote credential is still valid.
 
-The generated MCP invocation uses Rein's default read-only approval ceiling. It
-does not enable `--yes`, `--auto`, or bypass flags, and it does not publish policy.
-Unsupported operations must stop rather than use native tools as a fallback.
+The selected Rein runtime uses a read-only approval ceiling by default. Start
+the Gateway or standalone MCP server with `--yes` or `--auto` only when the
+corresponding operation classes should be available. These flags do not publish
+or bypass organization policy. Unsupported operations must stop rather than use
+native tools as a fallback.
 
 ## Claude Code
 
