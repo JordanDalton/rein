@@ -21,6 +21,25 @@ func TestCloudURL(t *testing.T) {
 	}
 }
 
+func TestFormatCloudStatus(t *testing.T) {
+	for _, team := range []string{"", "   ", "jordan-daltons-team"} {
+		p := cloudProfile{ControlURL: "https://custom.example", Organization: "Jordan Dalton's Team", TeamSlug: team, User: "Jordan", DeviceName: "Mac"}
+		got := formatCloudStatus(p)
+		for _, expected := range []string{"Control URL: https://custom.example\n", "Organization: Jordan Dalton's Team\n", "User: Jordan\n", "Device: Mac\n", "Last sync: just now\n"} {
+			if !strings.Contains(got, expected) {
+				t.Errorf("missing %q in %q", expected, got)
+			}
+		}
+		if strings.TrimSpace(team) == "" {
+			if strings.Contains(got, "\nTeam:") {
+				t.Errorf("empty team displayed: %q", got)
+			}
+		} else if !strings.Contains(got, "Team: "+team+"\n") {
+			t.Errorf("team missing: %q", got)
+		}
+	}
+}
+
 func TestHelpUsesReinControlBranding(t *testing.T) {
 	if !strings.Contains(usage, "Rein Control") || strings.Contains(usage, "Rein Cloud") {
 		t.Fatal("help must use Rein Control branding")

@@ -248,8 +248,16 @@ func cmdStatus(ctx context.Context, args []string) error {
 	if err := saveCloudProfile(*profile); err != nil {
 		return err
 	}
-	fmt.Printf("Rein Control\n\nOrganization: %s\nTeam: %s\nUser: %s\nDevice: %s\nLast sync: just now\n", profile.Organization, profile.TeamSlug, profile.User, profile.DeviceName)
+	fmt.Print(formatCloudStatus(*profile))
 	return nil
+}
+
+func formatCloudStatus(profile cloudProfile) string {
+	status := fmt.Sprintf("Rein Control\n\nControl URL: %s\nOrganization: %s\n", profile.ControlURL, profile.Organization)
+	if team := strings.TrimSpace(profile.TeamSlug); team != "" {
+		status += fmt.Sprintf("Team: %s\n", team)
+	}
+	return status + fmt.Sprintf("User: %s\nDevice: %s\nLast sync: just now\n", profile.User, profile.DeviceName)
 }
 
 func cmdSync(ctx context.Context, args []string) error {
