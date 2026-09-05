@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func confirmSetup(in io.Reader, out io.Writer) bool {
@@ -19,16 +21,16 @@ func confirmSetup(in io.Reader, out io.Writer) bool {
 	return err == nil && (strings.EqualFold(strings.TrimSpace(line), "y") || strings.EqualFold(strings.TrimSpace(line), "yes"))
 }
 
-func guidedClaudeSetup(ctx context.Context) error {
+func guidedHarnessSetup(ctx context.Context, host string) error {
 	info, err := os.Stdin.Stat()
 	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
 		return errors.New("interactive setup requires a terminal; use explicit --dry-run or --persistent --apply flags")
 	}
-	if err := checkPersistentHost(ctx, "claude-code"); err != nil {
-		return fmt.Errorf("install Claude Code and sign in before setup: %w", err)
+	if err := checkPersistentHost(ctx, host); err != nil {
+		return fmt.Errorf("%s prerequisites not ready; install a supported version and sign in before setup: %w", host, err)
 	}
 	input := bufio.NewReader(os.Stdin)
-	missing, err := repairPersistentMissing("claude-code", false)
+	missing, err := repairPersistentMissing(host, false)
 	if err != nil {
 		return err
 	}
@@ -38,15 +40,15 @@ func guidedClaudeSetup(ctx context.Context) error {
 			fmt.Println("Cancelled. No changes made.")
 			return nil
 		}
-		if _, err := repairPersistentMissing("claude-code", true); err != nil {
+		if _, err := repairPersistentMissing(host, true); err != nil {
 			return err
 		}
 		fmt.Println("Missing files restored. Continuing setup verification.")
 	}
-	if err := configurePersistent("claude-code", "", "", false, false, false); err != nil {
+	if err := configurePersistent(host, "", "", false, false, false); err != nil {
 		return err
 	}
-	fmt.Println("Setup will use your active Rein connection (or open login), register claude-code if needed, install the settings shown above, and test MCP connectivity. Registration/login are not undone by --undo. No model requests or tool executions will be made.")
+	fmt.Printf("Setup will use your active Rein connection (or open login), register %s if needed, install the settings shown above, and test MCP connectivity. Registration/login are not undone by --undo. No model requests or tool executions will be made.\n", host)
 	if !confirmSetup(input, os.Stdout) {
 		fmt.Println("Setup cancelled. Any confirmed repair remains installed.")
 		return nil
@@ -61,40 +63,54 @@ func guidedClaudeSetup(ctx context.Context) error {
 		}
 	}
 	// Fail before installing restrictions if the saved origin or credential is invalid.
-	if _, err := newMCPGoverned("claude-code"); err != nil {
+	if _, err := newMCPGoverned(host); err != nil {
 		return fmt.Errorf("connection not ready (use rein login --control-url https://reincontrol.com): %w", err)
 	}
-	if _, err := registeredAgent("claude-code"); err != nil {
-		if err := cmdAgent(ctx, []string{"register", "claude-code"}); err != nil {
+	if _, err := registeredAgent(host); err != nil {
+		if err := cmdAgent(ctx, []string{"register", host}); err != nil {
 			return err
 		}
 	}
-	if err := configurePersistent("claude-code", "", "", true, false, false); err != nil {
+	if err := configurePersistent(host, "", "", true, false, false); err != nil {
 		return err
 	}
-	if err := configurePersistent("claude-code", "", "", false, true, false); err != nil {
+	if err := configurePersistent(host, "", "", false, true, false); err != nil {
 		return err
 	}
-	if err := checkClaudeMCP(ctx); err != nil {
-		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings remain installed; fix the cause and rerun setup, or restore with rein configure claude-code --persistent --undo", err)
+	if err := checkHarnessMCP(ctx, host); err != nil {
+		return fmt.Errorf("setup incomplete: MCP verification failed: %w. Settings remain installed; fix the cause and rerun setup, or restore with rein configure %s --persistent --undo", err, host)
 	}
-	fmt.Println("Configuration and MCP handshake verified. Runtime enforcement is NOT yet verified. Start claude, trust this project's MCP/settings, inspect /mcp and /hooks, then test native-tool blocking. Publish policy in Rein Control and cache trusted CLI specs with rein spec TOOL before execution tests.")
+	fmt.Printf("Configuration and MCP handshake verified. Runtime enforcement is NOT yet verified. Start %s, trust this project's MCP/settings, inspect /mcp and /hooks, then test native-tool blocking. Publish policy in Rein Control and cache trusted CLI specs with rein spec TOOL before execution tests.\n", harnessBinary(host))
+	printPersistentCoverage(host)
 	return nil
 }
 
 // Launch the exact installed server, without invoking models or executing tools.
 func checkClaudeMCP(ctx context.Context) error {
-	data, err := os.ReadFile(".mcp.json")
+	return checkHarnessMCP(ctx, "claude-code")
+}
+
+func checkHarnessMCP(ctx context.Context, host string) error {
+	path := ".mcp.json"
+	if host == "codex" {
+		path = ".codex/config.toml"
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	var config struct {
 		Servers map[string]struct {
-			Command string   `json:"command"`
-			Args    []string `json:"args"`
-		} `json:"mcpServers"`
+			Command string   `json:"command" toml:"command"`
+			Args    []string `json:"args" toml:"args"`
+		} `json:"mcpServers" toml:"mcp_servers"`
 	}
-	if err := json.Unmarshal(data, &config); err != nil {
+	if host == "codex" {
+		err = toml.Unmarshal(data, &config)
+	} else {
+		err = json.Unmarshal(data, &config)
+	}
+	if err != nil {
 		return err
 	}
 	server, ok := config.Servers["rein"]

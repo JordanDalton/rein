@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestSetupMCPHelper(t *testing.T) {
@@ -40,6 +42,32 @@ func TestCheckClaudeMCP(t *testing.T) {
 	}
 	t.Setenv("REIN_SETUP_BAD_RESPONSE", "1")
 	if err := checkClaudeMCP(context.Background()); err == nil {
+		t.Fatal("accepted failed handshake")
+	}
+}
+
+func TestCheckCodexMCP(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("REIN_SETUP_HELPER", "1")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := toml.Marshal(map[string]any{"mcp_servers": map[string]any{"rein": map[string]any{"command": binary, "args": []string{"-test.run=^TestSetupMCPHelper$"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(".codex", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".codex/config.toml", data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkHarnessMCP(context.Background(), "codex"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REIN_SETUP_BAD_RESPONSE", "1")
+	if err := checkHarnessMCP(context.Background(), "codex"); err == nil {
 		t.Fatal("accepted failed handshake")
 	}
 }

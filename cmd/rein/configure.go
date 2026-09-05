@@ -15,7 +15,7 @@ import (
 )
 
 const configureUsage = `usage: rein configure [claude-code|codex] [flags]
-  claude-code            without flags, start confirmed interactive project setup
+  claude-code|codex      without flags, start confirmed interactive project setup
   --scope project|user   project (default) or this user's Rein home
   --backend NAME         Rein's planner backend, not the outer harness backend
   --model NAME           Rein's planner model, not the outer harness model
@@ -72,8 +72,8 @@ func cmdConfigure(ctx context.Context, args []string) error {
 	if host != "claude-code" && host != "codex" {
 		return errors.New(configureUsage)
 	}
-	if host == "claude-code" && len(args) == 1 {
-		return guidedClaudeSetup(ctx)
+	if len(args) == 1 {
+		return guidedHarnessSetup(ctx, host)
 	}
 	fs := flagSet("configure")
 	scope := fs.String("scope", "project", "")
