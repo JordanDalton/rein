@@ -109,7 +109,16 @@ Cloud enrollment currently requires **macOS Keychain** for credential storage.
 For named MCP callers and central approvals, follow the
 [enterprise setup guide](docs/enterprise.md).
 
-Preview and save a restricted harness launch profile without rewriting existing
+For guided Claude Code project setup, run `rein configure claude-code` in an
+interactive terminal. It previews changes and asks for confirmation, guides login
+if needed, registers the caller, installs persistent MCP/settings with backups,
+and verifies the MCP handshake without running tools or making model requests.
+If verification fails, setup reports failure and leaves installed settings
+recoverable with `rein configure claude-code --persistent --undo`.
+Then start `claude`, trust the project settings/MCP, inspect `/mcp` and `/hooks`,
+and verify native-tool blocking. Connectivity is not proof of runtime enforcement.
+
+Alternatively, preview and save a restricted harness launch profile without rewriting existing
 Claude Code or Codex settings:
 
 ```bash

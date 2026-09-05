@@ -15,10 +15,11 @@ import (
 )
 
 const configureUsage = `usage: rein configure [claude-code|codex] [flags]
+  claude-code            without flags, start confirmed interactive project setup
   --scope project|user   project (default) or this user's Rein home
   --backend NAME         Rein's planner backend, not the outer harness backend
   --model NAME           Rein's planner model, not the outer harness model
-  --dry-run              preview only (also the default)
+  --dry-run              preview only; never starts interactive setup
   --apply                save a Rein-owned launch profile
   --persistent           install project-level tool guard and MCP settings instead
   --register             with --apply, register the caller if missing (requires login)
@@ -70,6 +71,9 @@ func cmdConfigure(ctx context.Context, args []string) error {
 	host := args[0]
 	if host != "claude-code" && host != "codex" {
 		return errors.New(configureUsage)
+	}
+	if host == "claude-code" && len(args) == 1 {
+		return guidedClaudeSetup(ctx)
 	}
 	fs := flagSet("configure")
 	scope := fs.String("scope", "project", "")
