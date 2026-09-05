@@ -46,6 +46,19 @@ func TestConfigureStrictClaudeArguments(t *testing.T) {
 	}
 }
 
+func TestConfigureCanUsePersistentGateway(t *testing.T) {
+	for _, host := range []string{"claude-code", "codex"} {
+		args := harnessArgs(harnessProfile{Host: host, Rein: "/bin/rein", Gateway: true})
+		encoded, _ := json.Marshal(args)
+		if !strings.Contains(string(encoded), `gateway`) || !strings.Contains(string(encoded), `connect`) || !strings.Contains(string(encoded), host) {
+			t.Fatalf("%s does not use gateway bridge: %s", host, encoded)
+		}
+		if strings.Contains(string(encoded), `\"mcp\"`) {
+			t.Fatalf("%s still launches rein mcp: %s", host, encoded)
+		}
+	}
+}
+
 func TestConfigurePlannerOptionsOnlyReachMCP(t *testing.T) {
 	for _, host := range []string{"claude-code", "codex"} {
 		p := harnessProfile{Version: 1, Host: host, Rein: "/bin/rein", Backend: "ollama", Model: `local-model "quoted"`}

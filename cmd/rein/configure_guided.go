@@ -45,13 +45,13 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 		}
 		fmt.Println("Missing files restored. Continuing setup verification.")
 	}
-	if err := configurePersistent(host, "", "", false, false, false); err != nil {
+	if err := configurePersistent(host, "", "", true, false, false, false); err != nil {
 		return err
 	}
-	if err := cmdConfigure(ctx, []string{host, "--dry-run"}); err != nil {
+	if err := cmdConfigure(ctx, []string{host, "--gateway", "--dry-run"}); err != nil {
 		return err
 	}
-	fmt.Printf("Setup will use your active Rein connection (or open login), register %s if needed, save the launch profile AND install persistent settings shown above, and test MCP connectivity. Registration/login are not undone by --undo. No model requests or tool executions will be made.\n", host)
+	fmt.Printf("Setup will use your active Rein connection (or open login), register %s if needed, start the local gateway, save the launch profile AND install persistent settings shown above, and test MCP connectivity. Registration/login and the running gateway are not undone by --undo. No model requests or tool executions will be made.\n", host)
 	if !confirmSetup(input, os.Stdout) {
 		fmt.Println("Setup cancelled. Any confirmed repair remains installed.")
 		return nil
@@ -65,22 +65,29 @@ func guidedHarnessSetup(ctx context.Context, host string) error {
 			return err
 		}
 	}
-	// Fail before installing restrictions if the saved origin or credential is invalid.
-	if _, err := newMCPGoverned(host); err != nil {
-		return fmt.Errorf("connection not ready (use rein login --control-url https://reincontrol.com): %w", err)
-	}
 	if _, err := registeredAgent(host); err != nil {
 		if err := cmdAgent(ctx, []string{"register", host}); err != nil {
 			return err
 		}
 	}
-	if err := cmdConfigure(ctx, []string{host, "--apply"}); err != nil {
+	// Fail before installing restrictions if the saved origin or agent credential is invalid.
+	if _, err := newMCPGoverned(host); err != nil {
+		return fmt.Errorf("connection not ready (use rein login --control-url https://reincontrol.com): %w", err)
+	}
+	opts, err := parseGatewayOptions("start", nil)
+	if err != nil {
+		return err
+	}
+	if err := startGateway(ctx, opts); err != nil {
+		return fmt.Errorf("gateway could not be started: %w", err)
+	}
+	if err := cmdConfigure(ctx, []string{host, "--gateway", "--apply"}); err != nil {
 		return fmt.Errorf("launch profile could not be saved; existing profiles are protected (use --undo before replacing a different profile): %w", err)
 	}
-	if err := configurePersistent(host, "", "", true, false, false); err != nil {
+	if err := configurePersistent(host, "", "", true, true, false, false); err != nil {
 		return fmt.Errorf("persistent setup incomplete; launch profile remains saved (restore it with rein configure %s --undo): %w", host, err)
 	}
-	if err := configurePersistent(host, "", "", false, true, false); err != nil {
+	if err := configurePersistent(host, "", "", false, false, true, false); err != nil {
 		return err
 	}
 	if err := checkHarnessMCP(ctx, host); err != nil {

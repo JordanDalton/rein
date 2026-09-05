@@ -42,6 +42,7 @@ type Config struct {
 	DryRun   bool // plan and print, never execute
 	Timeout  time.Duration
 	Verbose  bool
+	WorkDir  string
 	Out      io.Writer
 	In       io.Reader // approval input; defaults to /dev/tty, then stdin
 	// Policy receives the validated argv immediately before approval/execution.
@@ -204,7 +205,7 @@ func Run(ctx context.Context, cfg Config) (string, error) {
 				return "", fmt.Errorf("pre-execution audit failed; command not executed: %w", err)
 			}
 		}
-		res, err := runner.Run(ctx, plan.Argv, runner.Options{Timeout: cfg.Timeout, LogDir: logDir})
+		res, err := runner.Run(ctx, plan.Argv, runner.Options{Timeout: cfg.Timeout, LogDir: logDir, WorkDir: cfg.WorkDir})
 		if cfg.AfterExecute != nil {
 			if auditErr := cfg.AfterExecute(plan.Argv, res, err); auditErr != nil {
 				return "", fmt.Errorf("post-execution audit failed; command may have executed, do not blindly retry: %w", auditErr)

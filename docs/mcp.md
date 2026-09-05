@@ -2,6 +2,10 @@
 
 [Back to README](../README.md)
 
+For registered Rein Control agents, the preferred setup uses the persistent
+[Rein Gateway](gateway.md). The existing `rein mcp` command remains the direct
+stdio transport and works without a gateway.
+
 For preview-first Claude Code and Codex setup with restricted launch profiles,
 start with [Harness configuration](harness-configuration.md): `rein configure`.
 Adding MCP alone does not remove the host's native execution tools.

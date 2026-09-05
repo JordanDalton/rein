@@ -1,6 +1,11 @@
 # Governed MCP execution
 
-`rein mcp --agent NAME` requires login credentials, an HTTPS control plane, and a live published, unexpired policy. It fetches policy before planning and before each command; network, authentication, malformed-policy, and expiration errors stop execution. There is no offline cache fallback in this mode.
+`rein gateway connect --agent NAME` and the legacy direct transport
+`rein mcp --agent NAME` require a registered agent credential, an HTTPS control
+plane, and a live published, unexpired policy. They fetch policy before planning
+and before each command; network, authentication, malformed-policy, and
+expiration errors stop execution. There is no offline cache fallback in this
+mode.
 
 This mode requires an explicit matching allow or approval rule. Unmatched operations are denied, which is stricter than the interactive default. Environment-specific rules do not match: MCP currently has no trusted environment selection. Use unconditional rules or CI's explicit environment option as appropriate.
 

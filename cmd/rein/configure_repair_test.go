@@ -15,7 +15,7 @@ func TestRepairPersistentMissing(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Chdir(root)
-			if err := configurePersistent("claude-code", "", "", true, false, false); err != nil {
+			if err := configurePersistent("claude-code", "", "", false, true, false, false); err != nil {
 				t.Fatal(err)
 			}
 			original, _ := os.ReadFile(".claude/settings.json")
@@ -53,7 +53,7 @@ func TestRepairPersistentMissing(t *testing.T) {
 			if !bytes.Equal(receipt, after) {
 				t.Fatal("receipt changed")
 			}
-			if err := configurePersistent("claude-code", "", "", false, false, true); err != nil {
+			if err := configurePersistent("claude-code", "", "", false, false, false, true); err != nil {
 				t.Fatal(err)
 			}
 		})

@@ -83,8 +83,15 @@ See the [CLI usage guide](docs/usage.md) for flag placement and approval options
 
 ## Use with an agent
 
-Rein exposes tool discovery and execution over MCP on stdio. Configure your MCP
-client to launch `rein mcp`:
+Rein exposes tool discovery and execution over MCP. For a registered Control
+agent, run guided setup to install the persistent Gateway bridge:
+
+```bash
+rein configure codex
+# or: rein configure claude-code
+```
+
+For a standalone local server, configure your MCP client to launch `rein mcp`:
 
 ```json
 { "mcpServers": { "rein": { "command": "rein", "args": ["mcp"] } } }
@@ -111,7 +118,7 @@ For named MCP callers and central approvals, follow the
 
 For guided project setup, run `rein configure claude-code` or `rein configure codex` in an
 interactive terminal. It previews changes and asks for confirmation, guides login
-if needed, registers the caller, installs persistent MCP/settings with backups,
+if needed, registers the caller, starts the persistent local Rein Gateway, installs persistent MCP/settings with backups,
 and saves the project launch profile (the same operation as `--apply`),
 and verifies the MCP handshake without running tools or making model requests.
 If a previously installed file is missing, guided setup offers to restore it
@@ -123,6 +130,9 @@ To undo both, run `rein configure HOST --persistent --undo`, then
 automatically; undo it before changing its settings.
 If verification fails, setup reports failure and leaves installed settings
 recoverable with `rein configure claude-code --persistent --undo`.
+The installed MCP bridge uses `rein gateway connect --agent HOST`; agent sessions
+share the gateway daemon instead of launching a separate Rein MCP runtime. Manage
+it with `rein gateway status`, `rein gateway stop`, and `rein gateway start`.
 Then start `claude`, trust the project settings/MCP, inspect `/mcp` and `/hooks`,
 and verify native-tool blocking. For Codex, start `codex` instead; setup checks
 hook support and installs `.codex/config.toml`. Codex coverage remains partial:
@@ -191,6 +201,7 @@ before configuring unattended execution.
 - [CLI usage](docs/usage.md)
 - [Model backends and configuration](docs/configuration.md)
 - [MCP integration](docs/mcp.md)
+- [Persistent local gateway](docs/gateway.md)
 - [Enterprise setup](docs/enterprise.md)
 - [Safety and data handling](docs/security.md)
 - [Architecture and capability discovery](docs/architecture.md)

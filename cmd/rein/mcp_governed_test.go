@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +15,43 @@ import (
 	"github.com/jordandalton/rein/internal/risk"
 	"github.com/jordandalton/rein/internal/spec"
 )
+
+func TestGovernedSessionLoadsTheRegisteredAgentCredential(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("secure credential storage is currently implemented with macOS Keychain")
+	}
+	home := t.TempDir()
+	t.Setenv("REIN_HOME", home)
+	agent := cloudAgent{ID: "01JAGENT", Provider: "codex"}
+	if err := saveCloudProfile(cloudProfile{ControlURL: "https://control.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveAgents(cloudAgents{Agents: []cloudAgent{agent}}); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	trace := filepath.Join(home, "security-args")
+	script := fmt.Sprintf("#!/bin/sh\nprintf 'agent-token\\n'\nprintf '%%s\\n' \"$@\" > %q\n", trace)
+	if err := os.WriteFile(filepath.Join(bin, "security"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	g, err := newMCPGoverned("codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.caller != "codex" {
+		t.Fatalf("caller = %q", g.caller)
+	}
+	args, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "cloud:https://control.example:01JAGENT") {
+		t.Fatalf("agent credential account not requested: %s", args)
+	}
+}
 
 func TestGovernedPolicyFailsClosed(t *testing.T) {
 	for _, mode := range []string{"offline", "expired", "unpublished", "invalid", "unmatched"} {
@@ -45,7 +86,7 @@ func TestGovernedPolicyFailsClosed(t *testing.T) {
 
 func TestGovernedApprovalUsesExactCurrentArgv(t *testing.T) {
 	var requested map[string]any
-	g := &mcpGoverned{caller: "test", request: func(_ context.Context, method, route string, body, out any) error {
+	g := &mcpGoverned{caller: "test", workDir: "/tmp/rein-project", request: func(_ context.Context, method, route string, body, out any) error {
 		switch {
 		case route == "policy-bundles/latest":
 			*out.(*ciBundle) = ciBundle{Version: 1, ExpiresAt: ciTime{time.Now().Add(time.Hour)}, Rules: []ciRule{{Effect: "allow", Command: "status"}, {Effect: "require_approval"}}}
@@ -65,6 +106,9 @@ func TestGovernedApprovalUsesExactCurrentArgv(t *testing.T) {
 		t.Fatal("missing approval allowed")
 	}
 	operation := requested["operation"].(map[string]any)
+	if operation["cwd"] != "/tmp/rein-project" {
+		t.Fatalf("gateway working directory missing from approval: %v", operation["cwd"])
+	}
 	if !reflect.DeepEqual(operation["argv"], argv) {
 		t.Fatal(operation)
 	}

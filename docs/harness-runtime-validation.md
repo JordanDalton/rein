@@ -78,7 +78,7 @@ must only be used after a human approves that exact pending operation. Neither
 phase modifies policy or approves its own requests.
 
 - Validate normal project settings and hook trust in fresh interactive sessions.
-- Exercise actual `rein mcp --agent ...` against a staging control plane, including
+- Exercise the actual `rein gateway connect --agent ...` bridge against a staging control plane, including
   expired policy, approval retry, audit outage, and missing-server behavior.
 - Audit plugins, managed settings, other hooks, hosted tools, existing execution
   sessions, and configuration/binary tampering. Native metadata discovery is not

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jordandalton/rein/internal/spec"
 )
@@ -19,6 +20,7 @@ const configureUsage = `usage: rein configure [claude-code|codex] [flags]
   --scope project|user   project (default) or this user's Rein home
   --backend NAME         Rein's planner backend, not the outer harness backend
   --model NAME           Rein's planner model, not the outer harness model
+  --gateway              connect the harness to the persistent local gateway
   --require-spec TOOLS   comma-separated trusted cached specs required for setup/check
   --dry-run              preview only; never starts interactive setup
   --apply                save a Rein-owned launch profile
@@ -39,6 +41,7 @@ type harnessProfile struct {
 	Rein    string `json:"rein_binary"`
 	Backend string `json:"backend,omitempty"`
 	Model   string `json:"model,omitempty"`
+	Gateway bool   `json:"gateway,omitempty"`
 }
 
 // The receipt stores exactly what was installed and the previous bytes. Undo
@@ -86,6 +89,7 @@ func cmdConfigure(ctx context.Context, args []string) error {
 	register := fs.Bool("register", false, "")
 	backend := fs.String("backend", "", "")
 	model := fs.String("model", "", "")
+	gateway := fs.Bool("gateway", false, "")
 	persistent := fs.Bool("persistent", false, "")
 	requiredSpecs := fs.String("require-spec", "", "")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -114,8 +118,8 @@ func cmdConfigure(ctx context.Context, args []string) error {
 	if actions > 1 || (*register && !*apply) {
 		return errors.New("choose one action; --register is only available with --apply")
 	}
-	if (*check || *launch || *undo) && (*backend != "" || *model != "") {
-		return errors.New("--backend and --model configure a saved profile; use them with preview or --apply, not --check/--launch/--undo")
+	if (*check || *launch || *undo) && (*backend != "" || *model != "" || *gateway) {
+		return errors.New("--backend, --model, and --gateway configure a saved profile; use them with preview or --apply, not --check/--launch/--undo")
 	}
 	if strings.ContainsAny(*backend+*model, "\x00\r\n") {
 		return errors.New("backend and model must not contain control characters")
@@ -129,7 +133,7 @@ func cmdConfigure(ctx context.Context, args []string) error {
 				return err
 			}
 		}
-		return configurePersistent(host, *backend, *model, *apply, *check, *undo)
+		return configurePersistent(host, *backend, *model, *gateway, *apply, *check, *undo)
 	}
 	root, err := os.Getwd()
 	if err != nil {
@@ -176,7 +180,7 @@ func cmdConfigure(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	profile := harnessProfile{Version: 1, Host: host, Rein: binary, Backend: *backend, Model: *model}
+	profile := harnessProfile{Version: 1, Host: host, Rein: binary, Backend: *backend, Model: *model, Gateway: *gateway}
 	data, err := json.MarshalIndent(profile, "", "  ")
 	if err != nil {
 		return err
@@ -236,13 +240,7 @@ func harnessCoverage(host string) string {
 }
 
 func harnessArgs(p harnessProfile) []string {
-	mcpArgs := []string{"mcp", "--agent", p.Host}
-	if p.Backend != "" {
-		mcpArgs = append(mcpArgs, "--backend", p.Backend)
-	}
-	if p.Model != "" {
-		mcpArgs = append(mcpArgs, "--model", p.Model)
-	}
+	mcpArgs := harnessMCPArgs(p)
 	if p.Host == "claude-code" {
 		config, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"rein": map[string]any{"command": p.Rein, "args": mcpArgs, "alwaysLoad": true}}})
 		return []string{"--tools", "", "--strict-mcp-config", "--mcp-config", string(config)}
@@ -252,6 +250,20 @@ func harnessArgs(p harnessProfile) []string {
 	encodedArgs, _ := json.Marshal(mcpArgs)
 	server := fmt.Sprintf("mcp_servers.rein={command=%s,args=%s,enabled=true,required=true}", quoted, encodedArgs)
 	return []string{"-c", "features.shell_tool=false", "-c", server}
+}
+
+func harnessMCPArgs(p harnessProfile) []string {
+	if p.Gateway {
+		return []string{"gateway", "connect", "--agent", p.Host}
+	}
+	args := []string{"mcp", "--agent", p.Host}
+	if p.Backend != "" {
+		args = append(args, "--backend", p.Backend)
+	}
+	if p.Model != "" {
+		args = append(args, "--model", p.Model)
+	}
+	return args
 }
 
 func readHarnessProfile(path, host string) (harnessProfile, error) {
@@ -285,6 +297,13 @@ func checkHarnessProfile(p harnessProfile) error {
 	}
 	if _, err := exec.LookPath(p.Rein); err != nil {
 		return fmt.Errorf("Rein binary is not executable: %w", err)
+	}
+	if p.Gateway {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := gatewayControl(ctx, defaultGatewaySocket(), gatewayHello{Type: "health"}); err != nil {
+			return fmt.Errorf("Rein Gateway is not running; run `rein gateway start`: %w", err)
+		}
 	}
 	_, err = registeredAgent(p.Host)
 	return err

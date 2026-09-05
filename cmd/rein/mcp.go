@@ -87,11 +87,7 @@ func cmdMCP(ctx context.Context, args []string) error {
 		}
 	}
 
-	srv := mcp.New("rein", version(), os.Stdin, os.Stdout)
-	srv.Instructions = mcpInstructions
-	for _, t := range d.tools() {
-		srv.Add(t)
-	}
+	srv := newReinMCPServer(d, os.Stdin, os.Stdout)
 	fmt.Fprintf(os.Stderr, "rein mcp: serving on stdio · backend %s · approval ceiling %s",
 		*backend, approvalName(d.ceiling))
 	if d.caller != "" {
@@ -101,17 +97,27 @@ func cmdMCP(ctx context.Context, args []string) error {
 	return srv.Serve(ctx)
 }
 
-const mcpInstructions = `Rein is the execution governor for this Claude Code session. All command execution must go through the Rein MCP tools, especially rein_in; never use Bash, a shell, direct CLI invocation, or another execution tool as a fallback. If Rein reports that an operation needs approval, needs input, is blocked, or is slow, relay that result to the user and wait or ask for the required next step. Do not decide that a command is harmless and bypass Rein. rein_in drives one named CLI from a plain-language intent, learns its commands and flags, applies organization policy, coordinates Cloud approval, executes without a shell, and returns the transcript. Use rein_list to inspect learned tools and rein_spec to inspect a tool's capabilities.`
+const mcpInstructions = `Rein is the execution governor for this agent session. All command execution must go through the Rein MCP tools, especially rein_in; never use a shell, direct CLI invocation, or another execution tool as a fallback. If Rein reports that an operation needs approval, needs input, is blocked, or is slow, relay that result to the user and wait or ask for the required next step. Do not decide that a command is harmless and bypass Rein. rein_in drives one named CLI from a plain-language intent, learns its commands and flags, applies organization policy, coordinates Control approval, executes without a shell, and returns the transcript. Use rein_list to inspect learned tools and rein_spec to inspect a tool's capabilities.`
 
 // mcpDeps is what the MCP tools need from the rest of rein, factored so a
 // test can substitute a scripted backend and a canned spec.
 type mcpDeps struct {
 	caller     string
+	workDir    string
 	ceiling    loop.Approval
 	steps      int
 	timeout    time.Duration
 	newSpec    func(ctx context.Context, tool string, refresh bool) (*spec.Spec, error)
 	newBackend func() (planner.Backend, error)
+}
+
+func newReinMCPServer(d *mcpDeps, in io.Reader, out io.Writer) *mcp.Server {
+	srv := mcp.New("rein", version(), in, out)
+	srv.Instructions = mcpInstructions
+	for _, tool := range d.tools() {
+		srv.Add(tool)
+	}
+	return srv
 }
 
 func (d *mcpDeps) tools() []mcp.Tool {
@@ -202,7 +208,7 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 	}
 	if approval > d.ceiling {
 		return "", fmt.Errorf("approval %q is above this server's ceiling of %q; "+
-			"it was started without --%s. Ask the user, who can restart it with `rein mcp --%s` "+
+			"the Rein runtime was started without --%s. Ask the user, who can restart the MCP server or Gateway with --%s "+
 			"or run `rein in --%s %s %q` themselves",
 			approvalName(approval), approvalName(d.ceiling), approvalFlag(approval),
 			approvalFlag(approval), approvalFlag(approval), args.Tool, args.Intent)
@@ -214,6 +220,7 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 		if err != nil {
 			return "", err
 		}
+		governed.workDir = d.workDir
 		governed.operation = map[string]any{"tool": args.Tool, "intent": args.Intent}
 		bundle, err := governed.bundle(ctx)
 		if bundle.Version > 0 {
@@ -246,6 +253,7 @@ func (d *mcpDeps) runIn(ctx context.Context, raw json.RawMessage) (string, error
 		MaxSteps: d.steps,
 		Approval: approval,
 		Timeout:  d.timeout,
+		WorkDir:  d.workDir,
 		Policy: func(argv []string, level risk.Level) error {
 			return policy.CheckIntent(d.caller, args.Intent, argv, level)
 		},

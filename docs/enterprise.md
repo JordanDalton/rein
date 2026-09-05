@@ -23,31 +23,42 @@ control endpoint provided by your organization.
 
 ## Connect a named MCP caller
 
+Guided setup registers the caller, starts the local Gateway, installs the host
+configuration, and verifies its MCP handshake:
+
 ```bash
-rein agent register claude-code
-rein agent list
+rein configure claude-code
+# or: rein configure codex
 ```
 
-Configure your MCP client to launch the registered caller:
+For manual setup, register the caller and start the Gateway before configuring
+the bridge:
+
+```bash
+rein agent register claude-code
+rein gateway start
+```
+
+Then configure your MCP client:
 
 ```json
 {
   "mcpServers": {
     "rein": {
       "command": "rein",
-      "args": ["mcp", "--agent", "claude-code"]
+      "args": ["gateway", "connect", "--agent", "claude-code"]
     }
   }
 }
 ```
 
 Use `codex` in both places for a Codex caller. The name must match a registered
-provider. Backend configuration is independent of caller identity; pass
-`--backend` and any required `--model` to choose the planner.
+provider. Backend configuration belongs to the Gateway; pass `--backend` and any
+required `--model` to `rein gateway start`.
 
-The default MCP ceiling permits only commands classified as read-only. Add
-`--yes` to the server arguments if callers should be able to request mutating
-operations. The caller must also request the appropriate approval level.
+The default Gateway ceiling permits only commands classified as read-only. Start
+it with `--yes` if callers should be able to request mutating operations. The
+caller must also request the appropriate approval level.
 Organization policy can deny operations or require central approval; a policy
 allow rule does not bypass the existing risk gate.
 

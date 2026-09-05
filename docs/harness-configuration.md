@@ -3,6 +3,10 @@
 `rein configure` detects supported harnesses on PATH. Configuration is preview-only
 unless you explicitly pass `--apply`.
 
+Interactive setup starts the persistent local Rein Gateway and configures the
+harness to use `rein gateway connect --agent HOST`. The explicit commands below
+retain the dedicated `rein mcp` transport unless `--gateway` is supplied.
+
 ```sh
 rein configure
 rein configure claude-code --dry-run
@@ -34,6 +38,7 @@ rein configure claude-code --persistent --undo
 
 Replace `claude-code` with `codex` for Codex. Persistent mode currently supports
 project scope only; it rejects user scope, `--launch`, and combined `--register`.
+Add `--gateway` to explicit preview/apply commands to use the running gateway.
 Backend/model options still configure only Rein's planner. Use an installed Rein
 binary, not `go run`, and keep it at the saved location while the guard is installed.
 

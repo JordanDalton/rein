@@ -522,7 +522,7 @@ func cmdAgent(ctx context.Context, args []string) error {
 		if err := saveAgents(agents); err != nil {
 			return err
 		}
-		fmt.Printf("Registered %s (%s). Start MCP with `rein mcp --agent %s`.\n", reply.Provider, reply.ID, reply.Provider)
+		fmt.Printf("Registered %s (%s). Connect it with `rein gateway connect --agent %s`.\n", reply.Provider, reply.ID, reply.Provider)
 		return nil
 	case "revoke":
 		if len(args) != 2 {
@@ -627,6 +627,9 @@ func deleteCloudCredential(endpoint string) error {
 }
 func storeAgentCredential(endpoint, id, token string) error {
 	return storeCloudCredential(endpoint+":"+id, token)
+}
+func loadAgentCredential(endpoint, id string) (string, error) {
+	return loadCloudCredential(endpoint + ":" + id)
 }
 func deleteAgentCredential(endpoint, id string) error {
 	return deleteCloudCredential(endpoint + ":" + id)

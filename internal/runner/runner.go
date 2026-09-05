@@ -27,6 +27,7 @@ type Options struct {
 	Timeout  time.Duration // default 60s
 	MaxLines int           // lines of each stream shown to the model (default 120)
 	LogDir   string        // where full output is archived; "" disables
+	WorkDir  string        // working directory for the command; "" inherits the process directory
 }
 
 func (o *Options) withDefaults() {
@@ -83,6 +84,7 @@ func Run(ctx context.Context, argv []string, opts Options) (*Result, error) {
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = Env()
+	cmd.Dir = opts.WorkDir
 	// Closed stdin, so a tool that decides to prompt fails fast instead of
 	// hanging until the timeout.
 	cmd.Stdin = bytes.NewReader(nil)

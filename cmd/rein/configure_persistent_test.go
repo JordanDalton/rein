@@ -112,7 +112,7 @@ func TestPersistentPreviewApplyDriftUndo(t *testing.T) {
 		t.Run(host, func(t *testing.T) {
 			dir := configureTestDir(t)
 			t.Chdir(dir)
-			if err := configurePersistent(host, "", "", false, false, false); err != nil {
+			if err := configurePersistent(host, "", "", false, false, false, false); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(".rein"); !os.IsNotExist(err) {
@@ -130,26 +130,26 @@ func TestPersistentPreviewApplyDriftUndo(t *testing.T) {
 			if err := os.WriteFile(first, original, 0640); err != nil {
 				t.Fatal(err)
 			}
-			if err := configurePersistent(host, "", "", true, false, false); err != nil {
+			if err := configurePersistent(host, "", "", false, true, false, false); err != nil {
 				t.Fatal(err)
 			}
 			installed, _ := os.ReadFile(first)
-			if err := configurePersistent(host, "", "", true, false, false); err != nil {
+			if err := configurePersistent(host, "", "", false, true, false, false); err != nil {
 				t.Fatal("apply not idempotent:", err)
 			}
 			if err := os.WriteFile(first, append(installed, '\n'), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := configurePersistent(host, "", "", false, true, false); err == nil {
+			if err := configurePersistent(host, "", "", false, false, true, false); err == nil {
 				t.Fatal("drift not detected")
 			}
-			if err := configurePersistent(host, "", "", false, false, true); err == nil {
+			if err := configurePersistent(host, "", "", false, false, false, true); err == nil {
 				t.Fatal("undo clobbers edits")
 			}
 			if err := os.WriteFile(first, installed, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := configurePersistent(host, "", "", false, false, true); err != nil {
+			if err := configurePersistent(host, "", "", false, false, false, true); err != nil {
 				t.Fatal(err)
 			}
 			restored, _ := os.ReadFile(first)
@@ -179,7 +179,7 @@ func TestPersistentRefusesSymlinksAndForeignReceipts(t *testing.T) {
 	if err := os.Symlink(target, ".claude"); err != nil {
 		t.Fatal(err)
 	}
-	if err := configurePersistent("claude-code", "", "", true, false, false); err == nil {
+	if err := configurePersistent("claude-code", "", "", false, true, false, false); err == nil {
 		t.Fatal("followed symlink")
 	}
 	if err := validatePersistentReceipt(persistentReceipt{Version: 1, Host: "codex", Binary: "/bin/rein", Files: []persistentFile{{Path: "../../elsewhere", After: []byte("x")}}}, "codex"); err == nil {

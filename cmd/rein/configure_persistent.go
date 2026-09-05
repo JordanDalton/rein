@@ -111,13 +111,7 @@ func mergePersistent(data []byte, path string, p harnessProfile) ([]byte, error)
 			return nil, fmt.Errorf("invalid configuration: %s", path)
 		}
 	}
-	args := []string{"mcp", "--agent", p.Host}
-	if p.Backend != "" {
-		args = append(args, "--backend", p.Backend)
-	}
-	if p.Model != "" {
-		args = append(args, "--model", p.Model)
-	}
+	args := harnessMCPArgs(p)
 	server := map[string]any{"command": p.Rein, "args": args}
 	if p.Host == "claude-code" {
 		// The default-deny guard intentionally blocks ToolSearch. Rein's small
@@ -236,7 +230,7 @@ func validatePersistentReceipt(receipt persistentReceipt, host string) error {
 	return nil
 }
 
-func configurePersistent(host, backend, model string, apply, check, undo bool) error {
+func configurePersistent(host, backend, model string, gateway, apply, check, undo bool) error {
 	if runtime.GOOS == "windows" {
 		return errors.New("persistent hooks currently support macOS/Linux only; Windows enforcement is not implemented")
 	}
@@ -288,8 +282,8 @@ func configurePersistent(host, backend, model string, apply, check, undo bool) e
 			fmt.Println("Persistent settings restored. Original bytes and permissions recovered; credentials unchanged.")
 			return nil
 		}
-		if !check && (backend != "" || model != "") {
-			return errors.New("undo the existing persistent setup before changing planner options")
+		if !check && (backend != "" || model != "" || gateway) {
+			return errors.New("undo the existing persistent setup before changing transport or planner options")
 		}
 		if check {
 			info, err := os.Stat(receipt.Binary)
@@ -318,7 +312,7 @@ func configurePersistent(host, backend, model string, apply, check, undo bool) e
 		return errors.New("unsupported binary path")
 	}
 	receipt := persistentReceipt{Version: 1, Host: host, Binary: binary}
-	p := harnessProfile{Host: host, Rein: binary, Backend: backend, Model: model}
+	p := harnessProfile{Host: host, Rein: binary, Backend: backend, Model: model, Gateway: gateway}
 	for _, relative := range persistentPaths(host) {
 		f, err := readPersistentFile(filepath.Join(cwd, relative))
 		if err != nil {
@@ -332,7 +326,11 @@ func configurePersistent(host, backend, model string, apply, check, undo bool) e
 		receipt.Files = append(receipt.Files, f)
 		fmt.Printf("Will merge %s (original backed up; TOML/JSON formatting may change).\n", relative)
 	}
-	fmt.Println("Plan: register Rein MCP; install a default-deny PreToolUse guard allowing only Rein's three tool names. Existing hooks and other settings are preserved and require separate audit.")
+	transport := "a dedicated Rein MCP process"
+	if gateway {
+		transport = "the persistent local Rein Gateway"
+	}
+	fmt.Printf("Plan: connect to %s; install a default-deny PreToolUse guard allowing only Rein's three tool names. Existing hooks and other settings are preserved and require separate audit.\n", transport)
 	printPersistentCoverage(host)
 	if !apply {
 		fmt.Println("Preview only. Repeat with --persistent --apply to install.")

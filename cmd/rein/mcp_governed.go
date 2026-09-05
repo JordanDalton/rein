@@ -22,6 +22,7 @@ import (
 type mcpGoverned struct {
 	request    func(context.Context, string, string, any, any) error
 	caller     string
+	workDir    string
 	operation  map[string]any
 	policyHash string
 }
@@ -34,12 +35,16 @@ func newMCPGoverned(caller string) (*mcpGoverned, error) {
 	if p == nil {
 		return nil, errors.New("governed MCP requires rein login")
 	}
-	token, err := loadCloudCredential(p.ControlURL)
+	agent, err := registeredAgent(caller)
+	if err != nil {
+		return nil, err
+	}
+	token, err := loadAgentCredential(p.ControlURL, agent.ID)
 	if err != nil {
 		return nil, err
 	}
 	if token == "" {
-		return nil, errors.New("missing control plane credential")
+		return nil, errors.New("missing registered agent credential; register the agent again")
 	}
 	u, err := url.Parse(p.ControlURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -79,9 +84,12 @@ func (g *mcpGoverned) authorize(ctx context.Context, tool, intent string, argv [
 	if decision == "deny" {
 		return errors.New("blocked by policy: no explicit allow or approval rule")
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
+	cwd := g.workDir
+	if cwd == "" {
+		cwd, err = os.Getwd()
+		if err != nil {
+			return err
+		}
 	}
 	g.operation = map[string]any{"tool": tool, "intent": intent, "argv": append([]string(nil), argv...), "command": runner.Quote(argv), "cwd": cwd, "caller": g.caller, "policy_version": b.Version}
 	g.policyHash = governedHash(map[string]any{"bundle": b})

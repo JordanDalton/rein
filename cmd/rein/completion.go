@@ -15,13 +15,15 @@ const bashCompletion = `# bash completion for rein — add to ~/.bashrc:
 _rein() {
     local cur=${COMP_WORDS[COMP_CWORD]}
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "in spec list mcp configure update version help completion" -- "$cur")
+        COMPREPLY=( $(compgen -W "in spec list mcp configure gateway update version help completion" -- "$cur")
                     $(compgen -c -- "$cur") )
         return
     fi
     case ${COMP_WORDS[1]} in
         configure)
-            COMPREPLY=( $(compgen -W "claude-code codex --scope --persistent --backend --model --dry-run --apply --register --check --launch --undo" -- "$cur") ) ;;
+            COMPREPLY=( $(compgen -W "claude-code codex --scope --persistent --gateway --backend --model --dry-run --apply --register --check --launch --undo" -- "$cur") ) ;;
+        gateway)
+            COMPREPLY=( $(compgen -W "start serve status stop connect" -- "$cur") ) ;;
         in|run|spec)
             [[ $COMP_CWORD -eq 2 ]] && COMPREPLY=( $(compgen -c -- "$cur") ) ;;
         completion)
@@ -37,13 +39,15 @@ const zshCompletion = `#compdef rein
 _rein() {
     if (( CURRENT == 2 )); then
         _alternative \
-            'verbs:rein command:(in spec list mcp configure update version help completion)' \
+            'verbs:rein command:(in spec list mcp configure gateway update version help completion)' \
             'tools:tool:_command_names -e'
         return
     fi
     case $words[2] in
         configure)
-            _values configure claude-code codex --scope --persistent --backend --model --dry-run --apply --register --check --launch --undo ;;
+            _values configure claude-code codex --scope --persistent --gateway --backend --model --dry-run --apply --register --check --launch --undo ;;
+        gateway)
+            _values gateway start serve status stop connect ;;
         in|run|spec)
             (( CURRENT == 3 )) && _command_names -e ;;
         completion)
@@ -60,8 +64,9 @@ fi
 const fishCompletion = `# fish completion for rein — save as ~/.config/fish/completions/rein.fish, or:
 #   rein completion fish | source
 complete -c rein -f
-complete -c rein -n "__fish_use_subcommand" -a "in spec list mcp configure update version help completion" -d "rein command"
-complete -c rein -n "__fish_seen_subcommand_from configure" -a "claude-code codex --scope --persistent --backend --model --dry-run --apply --register --check --launch --undo"
+complete -c rein -n "__fish_use_subcommand" -a "in spec list mcp configure gateway update version help completion" -d "rein command"
+complete -c rein -n "__fish_seen_subcommand_from configure" -a "claude-code codex --scope --persistent --gateway --backend --model --dry-run --apply --register --check --launch --undo"
+complete -c rein -n "__fish_seen_subcommand_from gateway" -a "start serve status stop connect"
 complete -c rein -n "__fish_use_subcommand" -a "(__fish_complete_command)"
 complete -c rein -n "__fish_seen_subcommand_from in run spec; and test (count (commandline -opc)) -eq 2" -a "(__fish_complete_command)"
 complete -c rein -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -85,5 +86,20 @@ func TestRunClosesStdinSoToolsDoNotBlock(t *testing.T) {
 	}
 	if res.TimedOut {
 		t.Error("cat blocked on stdin instead of seeing EOF")
+	}
+}
+
+func TestRunUsesRequestedWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	result, err := Run(context.Background(), []string{"pwd"}, Options{WorkDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(result.Stdout) != resolved {
+		t.Fatalf("pwd = %q, want %q", result.Stdout, resolved)
 	}
 }
