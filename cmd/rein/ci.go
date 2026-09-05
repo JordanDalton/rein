@@ -97,7 +97,7 @@ func ciDecision(bundle ciBundle, caller, environment string, argv []string) (str
 		if rule.Effect != "allow" && rule.Effect != "deny" && rule.Effect != "require_approval" && rule.Effect != "approval_required" {
 			return "", errors.New("unsupported policy effect")
 		}
-		if rule.Access != "" && rule.Access != "any" && rule.Access != "write" {
+		if rule.Access != "" && rule.Access != "any" && rule.Access != "read" && rule.Access != "write" && rule.Access != "destructive" {
 			return "", errors.New("unsupported policy access condition")
 		}
 		for _, pattern := range []string{rule.Caller, rule.Tool, rule.Command} {
@@ -123,7 +123,7 @@ func ciDecision(bundle ciBundle, caller, environment string, argv []string) (str
 		if rule.Environment != "" && rule.Environment != environment {
 			continue
 		}
-		if rule.Access == "write" && risk.Classify(argv) == risk.Safe {
+		if rule.Access != "" && rule.Access != "any" && rule.Access != risk.Access(risk.Classify(argv)) {
 			continue
 		}
 		return rule.Effect, nil

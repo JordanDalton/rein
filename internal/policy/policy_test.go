@@ -36,6 +36,24 @@ func TestRequiresApprovalHonorsWriteAccess(t *testing.T) {
 	}
 }
 
+func TestPolicyAccessLevelsMatchExactly(t *testing.T) {
+	for _, test := range []struct {
+		access string
+		level  risk.Level
+	}{
+		{"read", risk.Safe},
+		{"write", risk.Caution},
+		{"destructive", risk.Danger},
+	} {
+		if !matches("codex", "git", "", "", test.access, "codex", "", []string{"git", "operation"}, test.level) {
+			t.Errorf("%s did not match %s", test.access, test.level)
+		}
+		if test.level != risk.Safe && matches("codex", "git", "", "", "read", "codex", "", []string{"git", "operation"}, test.level) {
+			t.Errorf("read rule matched %s", test.level)
+		}
+	}
+}
+
 func TestWildcardDefaultDenyWithExplicitAllow(t *testing.T) {
 	t.Setenv("REIN_HOME", t.TempDir())
 	policy := `{"rules":[{"effect":"allow","caller":"claude-code","tool":"herd","access":"any"},{"effect":"deny","caller":"*","tool":"*","access":"any"}]}`

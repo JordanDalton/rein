@@ -33,6 +33,36 @@ func TestCIDecisionFailsClosed(t *testing.T) {
 	}
 }
 
+func TestCIDecisionMatchesExactPolicyAccessLevel(t *testing.T) {
+	cases := []struct {
+		access string
+		argv   []string
+	}{
+		{"read", []string{"git", "status"}},
+		{"write", []string{"git", "commit", "-m", "change"}},
+		{"destructive", []string{"git", "reset", "--hard"}},
+	}
+	for _, test := range cases {
+		t.Run(test.access, func(t *testing.T) {
+			bundle := ciBundle{Version: 1, ExpiresAt: ciTime{time.Now().Add(time.Hour)}, Rules: []ciRule{
+				{Effect: "allow", Caller: "codex", Tool: "git", Access: test.access},
+				{Effect: "deny", Caller: "*", Tool: "*", Access: "any"},
+			}}
+			if effect, err := ciDecision(bundle, "codex", "", test.argv); err != nil || effect != "allow" {
+				t.Fatalf("matching %s operation = %q, %v", test.access, effect, err)
+			}
+			for _, other := range cases {
+				if other.access == test.access {
+					continue
+				}
+				if effect, err := ciDecision(bundle, "codex", "", other.argv); err != nil || effect != "deny" {
+					t.Fatalf("%s rule matched %s operation: %q, %v", test.access, other.access, effect, err)
+				}
+			}
+		})
+	}
+}
+
 func TestCIEndToEndWithControlPlane(t *testing.T) {
 	for _, scenario := range []string{"allow", "deny", "approval", "approval-no-wait", "auth-failure", "policy-failure", "audit-start-failure", "audit-outcome-failure", "command-failure"} {
 		t.Run(scenario, func(t *testing.T) {

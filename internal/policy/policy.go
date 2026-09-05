@@ -85,7 +85,7 @@ func matches(ruleCaller, ruleTool, ruleCommand, environment, access, caller, int
 	return wildcardMatch(ruleCaller, caller) && wildcardMatch(ruleTool, filepath.Base(argv[0])) &&
 		wildcardMatch(ruleCommand, command) &&
 		(environment == "" || strings.Contains(strings.ToLower(intent+" "+strings.Join(argv, " ")), strings.ToLower(environment))) &&
-		(access == "any" || access == "" || (access == "write" && level != risk.Safe))
+		(access == "any" || access == "" || access == risk.Access(level))
 }
 
 func wildcardMatch(pattern, value string) bool {

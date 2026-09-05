@@ -49,6 +49,18 @@ func Max(a, b Level) Level {
 	return b
 }
 
+// Access maps an execution risk level to the policy editor's access names.
+func Access(level Level) string {
+	switch level {
+	case Safe:
+		return "read"
+	case Danger:
+		return "destructive"
+	default:
+		return "write"
+	}
+}
+
 // readVerbs are commands that observe without changing anything.
 var readVerbs = map[string]bool{
 	"get": true, "list": true, "ls": true, "show": true, "describe": true,
