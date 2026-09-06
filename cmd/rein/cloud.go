@@ -137,15 +137,24 @@ func cmdLogin(ctx context.Context, args []string) error {
 	controlURL := fs.String("control-url", "", "")
 	deviceName := fs.String("device-name", hostname(), "")
 	profileName := fs.String("profile", "", "")
+	remote := fs.Bool("remote", false, "print an SSH tunnel instead of opening a browser")
+	sshTarget := fs.String("ssh-target", "", "SSH target used in the printed tunnel command")
+	callbackPort := fs.Int("callback-port", 0, "use a fixed local callback port (default: choose an available port)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: rein login [--control-url URL] [--device-name NAME]")
+		return errors.New("usage: rein login [--remote] [--ssh-target USER@HOST] [--callback-port PORT] [--control-url URL] [--device-name NAME]")
+	}
+	if *callbackPort < 0 || *callbackPort > 65535 {
+		return errors.New("callback port must be between 0 and 65535")
+	}
+	if *sshTarget != "" && strings.ContainsAny(*sshTarget, "\r\n") {
+		return errors.New("SSH target cannot contain newlines")
 	}
 	cloudProfileOverride = strings.TrimSpace(*profileName)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *callbackPort))
 	if err != nil {
 		return fmt.Errorf("start login callback: %w", err)
 	}
@@ -193,9 +202,17 @@ func cmdLogin(ctx context.Context, args []string) error {
 	go server.Serve(listener)
 	defer server.Shutdown(context.Background())
 
-	fmt.Printf("Opening Rein Control to enroll %q…\n", *deviceName)
-	if err := openBrowser(loginURL.String()); err != nil {
-		return fmt.Errorf("open browser: %w\nOpen this URL manually: %s", err, loginURL)
+	if *remote {
+		fmt.Printf("Remote login for %q. Keep this command running on the server.\n", *deviceName)
+		fmt.Printf("On your local machine, run: %s\n", remoteLoginTunnel(listener.Addr().(*net.TCPAddr).Port, *sshTarget))
+		fmt.Printf("Then open this URL locally: %s\n", loginURL.String())
+	} else {
+		fmt.Printf("Opening Rein Control to enroll %q…\n", *deviceName)
+	}
+	if !*remote {
+		if err := openBrowser(loginURL.String()); err != nil {
+			return fmt.Errorf("open browser: %w\nOpen this URL manually: %s", err, loginURL)
+		}
 	}
 	select {
 	case outcome := <-done:
@@ -218,6 +235,13 @@ func cmdLogin(ctx context.Context, args []string) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func remoteLoginTunnel(port int, target string) string {
+	if strings.TrimSpace(target) == "" {
+		target = "<user>@<remote-host>"
+	}
+	return fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s", port, port, target)
 }
 
 func cmdStatus(ctx context.Context, args []string) error {

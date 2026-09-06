@@ -21,6 +21,20 @@ Login opens the browser to enroll the device. `status` shows its Cloud identity;
 Set `REIN_CONTROL_URL` or use `rein login --control-url URL` to select a different
 control endpoint provided by your organization.
 
+### Login from an SSH session
+
+When Rein runs on a remote OpenClaw, Hermes, or other agent server, use remote
+mode so Rein prints the exact callback port and tunnel command instead of trying
+to open a browser on the server:
+
+```bash
+rein login --remote --ssh-target user@agent-server
+```
+
+Keep Rein running, execute the printed `ssh -N -L ...` command on your local
+machine, and open the printed URL locally. You can reserve a known callback
+port with `--callback-port 45943` if your SSH workflow requires it.
+
 ## Connect a named MCP caller
 
 Guided setup registers the caller, starts the local Gateway, installs the host

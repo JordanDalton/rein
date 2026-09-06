@@ -48,6 +48,15 @@ func TestHelpUsesReinControlBranding(t *testing.T) {
 	}
 }
 
+func TestRemoteLoginTunnel(t *testing.T) {
+	if got := remoteLoginTunnel(45943, "jordan@openclaw"); got != "ssh -N -L 45943:127.0.0.1:45943 jordan@openclaw" {
+		t.Fatalf("remoteLoginTunnel() = %q", got)
+	}
+	if got := remoteLoginTunnel(45943, ""); got != "ssh -N -L 45943:127.0.0.1:45943 <user>@<remote-host>" {
+		t.Fatalf("remoteLoginTunnel() placeholder = %q", got)
+	}
+}
+
 func TestLocalPolicyMetadataOnlyMatchesApplicableApprovalRules(t *testing.T) {
 	t.Setenv("REIN_HOME", t.TempDir())
 	policy := `{"version":7,"rules":[{"effect":"require_approval","caller":"claude-code","tool":"kubectl","environment":"production","access":"write"}]}`

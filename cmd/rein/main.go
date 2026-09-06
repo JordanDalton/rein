@@ -51,6 +51,7 @@ usage:
   rein spec <tool>             discover and cache <tool>'s capability map
   rein list                    show cached capability maps
   rein login                   connect this installation to Rein Control
+                               use --remote for an SSH callback tunnel
   rein logout                  revoke this device's Rein Control credential
   rein status                  show this installation's Rein Control identity
   rein team list                list local team profiles
