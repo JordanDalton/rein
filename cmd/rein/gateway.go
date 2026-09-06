@@ -85,7 +85,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("gateway is not running: %w", err)
 		}
-		fmt.Printf("Rein Gateway is running (pid %d, %d connection(s), backend %s, approval ceiling %s, %s).\n", reply.PID, reply.Connections, reply.Backend, reply.Ceiling, *socket)
+		printGatewayStatus(reply, *socket)
 		return nil
 	case "connect":
 		fs := flagSet("gateway connect")
@@ -169,7 +169,13 @@ func startGatewayOutput(ctx context.Context, opts gatewayOptions, verbose bool) 
 			return fmt.Errorf("Rein Gateway is already running with different settings (backend %s, approval ceiling %s); stop it before changing gateway settings", reply.Backend, reply.Ceiling)
 		}
 		if verbose {
-			fmt.Printf("Rein Gateway is already running (pid %d, %s).\n", reply.PID, opts.socket)
+			fmt.Println()
+			fmt.Println("Rein Gateway")
+			fmt.Println("=============")
+			fmt.Println("Status: already running")
+			fmt.Printf("PID:    %d\n", reply.PID)
+			fmt.Printf("Socket: %s\n", opts.socket)
+			fmt.Println()
 		}
 		return nil
 	}
@@ -198,7 +204,15 @@ func startGatewayOutput(ctx context.Context, opts gatewayOptions, verbose bool) 
 	for {
 		if reply, checkErr := gatewayControl(waitCtx, opts.socket, gatewayHello{Type: "health"}); checkErr == nil {
 			if verbose {
-				fmt.Printf("Rein Gateway started (pid %d, %s). Logs: %s\n", reply.PID, opts.socket, gatewayLogPath())
+				fmt.Println()
+				fmt.Println("Rein Gateway")
+				fmt.Println("=============")
+				fmt.Println("Status: started")
+				fmt.Printf("PID:    %d\n", reply.PID)
+				fmt.Printf("Socket: %s\n", opts.socket)
+				fmt.Printf("Logs:   %s\n", gatewayLogPath())
+				fmt.Println()
+				fmt.Println("Next: configure your host to launch `rein gateway connect --agent NAME`.")
 			}
 			return nil
 		}
@@ -215,8 +229,24 @@ func stopGateway(ctx context.Context, socket string) error {
 	if err != nil {
 		return fmt.Errorf("gateway is not running: %w", err)
 	}
-	fmt.Printf("Rein Gateway stopped (pid %d).\n", reply.PID)
+	fmt.Println()
+	fmt.Println("Rein Gateway")
+	fmt.Println("=============")
+	fmt.Println("Status: stopped")
+	fmt.Printf("PID:    %d\n", reply.PID)
 	return nil
+}
+
+func printGatewayStatus(reply gatewayReply, socket string) {
+	fmt.Println()
+	fmt.Println("Rein Gateway")
+	fmt.Println("=============")
+	fmt.Println("Status: running")
+	fmt.Printf("PID:    %d\n", reply.PID)
+	fmt.Printf("Socket: %s\n", socket)
+	fmt.Printf("Connections: %d\n", reply.Connections)
+	fmt.Printf("Backend: %s\n", reply.Backend)
+	fmt.Printf("Approval ceiling: %s\n", reply.Ceiling)
 }
 
 type gatewayHello struct {

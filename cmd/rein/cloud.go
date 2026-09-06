@@ -531,7 +531,12 @@ func registerCloudAgent(ctx context.Context, profile *cloudProfile, deviceToken,
 		return err
 	}
 	if verbose {
-		fmt.Printf("Registered %s (%s). Connect it with `rein gateway connect --agent %s`.\n", reply.Provider, reply.ID, reply.Provider)
+		fmt.Printf("Registered %s (%s).\n\n", reply.Provider, reply.ID)
+		fmt.Println("Next steps:")
+		fmt.Println("  1. Start the local Gateway:  rein gateway start")
+		fmt.Printf("  2. Configure your host to launch:  rein gateway connect --agent %s\n", reply.Provider)
+		fmt.Println()
+		fmt.Println("The connect command is an MCP bridge launched by the host; do not run it as a replacement for `rein gateway start`.")
 	}
 	return nil
 }
@@ -614,12 +619,21 @@ func cmdAgent(ctx context.Context, args []string) error {
 			return err
 		}
 		if len(agents.Agents) == 0 {
-			fmt.Println("No agents registered.")
+			fmt.Println()
+			fmt.Println("Rein agents")
+			fmt.Println("===========")
+			fmt.Println("No agents registered yet.")
 			return nil
 		}
+		fmt.Println()
+		fmt.Println("Rein agents")
+		fmt.Println("===========")
+		fmt.Printf("%-18s  %s\n", "Provider", "ID")
+		fmt.Printf("%-18s  %s\n", "--------", "--")
 		for _, a := range agents.Agents {
-			fmt.Printf("%s\t%s\n", a.Provider, a.ID)
+			fmt.Printf("%-18s  %s\n", a.Provider, a.ID)
 		}
+		fmt.Println()
 		return nil
 	case "register":
 		if len(args) != 2 {
