@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,31 @@ func TestRemoteLoginTunnel(t *testing.T) {
 	}
 	if got := remoteLoginTunnel(45943, ""); got != "ssh -N -L 45943:127.0.0.1:45943 <user>@<remote-host>" {
 		t.Fatalf("remoteLoginTunnel() placeholder = %q", got)
+	}
+}
+
+func TestFileCredentialStoreRoundTrip(t *testing.T) {
+	t.Setenv("REIN_HOME", t.TempDir())
+	endpoint := "https://reincontrol.example"
+	if err := storeFileCredential(endpoint, "secret-token"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadFileCredential(endpoint)
+	if err != nil || got != "secret-token" {
+		t.Fatalf("loadFileCredential() = %q, %v", got, err)
+	}
+	info, err := os.Stat(credentialFilePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("credential store mode = %o, want 600", info.Mode().Perm())
+	}
+	if err := deleteFileCredential(endpoint); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFileCredential(endpoint); !errors.Is(err, errCredentialNotFound) {
+		t.Fatalf("load after delete error = %v, want credential-not-found", err)
 	}
 }
 

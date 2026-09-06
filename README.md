@@ -112,7 +112,9 @@ rein status
 rein sync
 ```
 
-Cloud enrollment currently requires **macOS Keychain** for credential storage.
+On macOS, cloud credentials use Keychain. On Linux and other Unix hosts,
+Rein stores them in `~/.rein/credentials.json` with mode `0600`; protect that
+account and home directory accordingly.
 For named MCP callers and central approvals, follow the
 [enterprise setup guide](docs/enterprise.md).
 

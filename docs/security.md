@@ -14,7 +14,9 @@
   Registered MCP callers send audit events containing caller, tool, and intent.
   Approval requests can additionally include command text and policy metadata.
   These payloads are separate from command-output redaction; avoid secrets in
-  intent or command arguments. Cloud credentials use macOS Keychain.
+  intent or command arguments. Cloud credentials use macOS Keychain when
+  available; on Unix hosts without Keychain support, Rein uses the mode-0600
+  `~/.rein/credentials.json` store. Protect the account and home directory.
 
 ## Execution safeguards
 

@@ -196,16 +196,14 @@ func cmdLogin(ctx context.Context, args []string) error {
 			once.Do(func() { done <- result{err: errors.New("control plane returned an incomplete enrollment")} })
 			return
 		}
-		fmt.Fprintln(w, "Rein is connected. You may close this window.")
+		fmt.Fprintln(w, "Rein login received. The CLI is finishing enrollment; you may close this window.")
 		once.Do(func() { done <- result{identity: identity, token: token} })
 	})}
 	go server.Serve(listener)
 	defer server.Shutdown(context.Background())
 
 	if *remote {
-		fmt.Printf("Remote login for %q. Keep this command running on the server.\n", *deviceName)
-		fmt.Printf("On your local machine, run: %s\n", remoteLoginTunnel(listener.Addr().(*net.TCPAddr).Port, *sshTarget))
-		fmt.Printf("Then open this URL locally: %s\n", loginURL.String())
+		printRemoteLoginInstructions(*deviceName, listener.Addr().(*net.TCPAddr).Port, *sshTarget, loginURL.String())
 	} else {
 		fmt.Printf("Opening Rein Control to enroll %q…\n", *deviceName)
 	}
@@ -242,6 +240,26 @@ func remoteLoginTunnel(port int, target string) string {
 		target = "<user>@<remote-host>"
 	}
 	return fmt.Sprintf("ssh -N -L %d:127.0.0.1:%d %s", port, port, target)
+}
+
+func printRemoteLoginInstructions(deviceName string, port int, target, loginURL string) {
+	fmt.Println()
+	fmt.Println("Rein remote login")
+	fmt.Println("=================")
+	fmt.Printf("Device: %s\n", deviceName)
+	fmt.Println()
+	fmt.Println("Keep this terminal running on the remote server.")
+	fmt.Println()
+	fmt.Println("1. On your local machine, open a second terminal and run:")
+	fmt.Println()
+	fmt.Println("   " + remoteLoginTunnel(port, target))
+	fmt.Println()
+	fmt.Println("2. Open this URL in your local browser:")
+	fmt.Println()
+	fmt.Println("   " + loginURL)
+	fmt.Println()
+	fmt.Println("3. Wait for this command to finish, then run `rein status`.")
+	fmt.Println()
 }
 
 func cmdStatus(ctx context.Context, args []string) error {
@@ -672,10 +690,10 @@ func openCloudBrowser(rawURL string) error {
 func credentialAccount(endpoint string) string { return "cloud:" + endpoint }
 
 func storeCloudCredential(endpoint, token string) error {
-	if runtime.GOOS != "darwin" {
-		return errors.New("secure credential storage is not yet supported on this platform")
+	if runtime.GOOS == "darwin" {
+		return exec.Command("security", "add-generic-password", "-U", "-s", "rein", "-a", credentialAccount(endpoint), "-w", token).Run()
 	}
-	return exec.Command("security", "add-generic-password", "-U", "-s", "rein", "-a", credentialAccount(endpoint), "-w", token).Run()
+	return storeFileCredential(endpoint, token)
 }
 
 func loadCloudCredential(endpoint string) (string, error) {
@@ -683,20 +701,87 @@ func loadCloudCredential(endpoint string) (string, error) {
 }
 
 func loadCloudCredentialContext(ctx context.Context, endpoint string) (string, error) {
-	if runtime.GOOS != "darwin" {
-		return "", errors.New("secure credential storage is not yet supported on this platform")
+	if runtime.GOOS == "darwin" {
+		b, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", "rein", "-a", credentialAccount(endpoint), "-w").Output()
+		if err != nil {
+			return "", fmt.Errorf("%w; run `rein login` again", errCredentialNotFound)
+		}
+		return strings.TrimSpace(string(b)), nil
 	}
-	b, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", "rein", "-a", credentialAccount(endpoint), "-w").Output()
-	if err != nil {
-		return "", fmt.Errorf("%w; run `rein login` again", errCredentialNotFound)
-	}
-	return strings.TrimSpace(string(b)), nil
+	return loadFileCredential(endpoint)
 }
 func deleteCloudCredential(endpoint string) error {
-	if runtime.GOOS != "darwin" {
-		return errors.New("secure credential storage is not yet supported on this platform")
+	if runtime.GOOS == "darwin" {
+		return exec.Command("security", "delete-generic-password", "-s", "rein", "-a", credentialAccount(endpoint)).Run()
 	}
-	return exec.Command("security", "delete-generic-password", "-s", "rein", "-a", credentialAccount(endpoint)).Run()
+	return deleteFileCredential(endpoint)
+}
+
+func credentialFilePath() string { return filepath.Join(spec.Home(), "credentials.json") }
+
+func readFileCredentials() (map[string]string, error) {
+	b, err := os.ReadFile(credentialFilePath())
+	if os.IsNotExist(err) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var credentials map[string]string
+	if err := json.Unmarshal(b, &credentials); err != nil || credentials == nil {
+		return nil, errors.New("local credential store is corrupt; remove it and run `rein login` again")
+	}
+	return credentials, nil
+}
+
+func writeFileCredentials(credentials map[string]string) error {
+	if err := os.MkdirAll(filepath.Dir(credentialFilePath()), 0o700); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(credentials, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(credentialFilePath(), append(b, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(credentialFilePath(), 0o600)
+}
+
+func storeFileCredential(endpoint, token string) error {
+	credentials, err := readFileCredentials()
+	if err != nil {
+		return err
+	}
+	credentials[credentialAccount(endpoint)] = token
+	return writeFileCredentials(credentials)
+}
+
+func loadFileCredential(endpoint string) (string, error) {
+	credentials, err := readFileCredentials()
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(credentials[credentialAccount(endpoint)])
+	if token == "" {
+		return "", fmt.Errorf("%w; run `rein login` again", errCredentialNotFound)
+	}
+	return token, nil
+}
+
+func deleteFileCredential(endpoint string) error {
+	credentials, err := readFileCredentials()
+	if err != nil {
+		return err
+	}
+	delete(credentials, credentialAccount(endpoint))
+	if len(credentials) == 0 {
+		if err := os.Remove(credentialFilePath()); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writeFileCredentials(credentials)
 }
 func storeAgentCredential(endpoint, id, token string) error {
 	return storeCloudCredential(endpoint+":"+id, token)

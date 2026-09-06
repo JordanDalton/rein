@@ -8,7 +8,9 @@ is required. Visit [Rein Enterprise](https://reincontrol.com) for the offering.
 
 ## Enroll an installation
 
-Cloud credential storage currently supports macOS Keychain only.
+Cloud credentials use macOS Keychain when available. On Linux and other Unix
+hosts, Rein stores them in `~/.rein/credentials.json` with mode `0600`; protect
+that account and home directory accordingly.
 
 ```bash
 rein login
